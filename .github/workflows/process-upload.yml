@@ -1,0 +1,33 @@
+name: Process Upload
+
+on:
+  repository_dispatch:
+    types: [raw-upload]
+
+jobs:
+  process:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CF_KV_NAMESPACE_ID: "7b9a6c8cde134ee8b10922397ea2d006"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Merge upload into master dataset
+        run: python scripts/process_upload.py
+
+      - name: Run dashboard transforms
+        run: |
+          for f in scripts/dashboards/*.py; do
+            [ -e "$f" ] || continue
+            echo "Running $f"
+            python "$f"
+          done

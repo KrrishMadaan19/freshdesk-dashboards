@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Upload Freshdesk Export</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <nav class="top-links">
+    <a href="/">Home</a>
+  </nav>
+  <header>
+    <h1>Upload Freshdesk Export</h1>
+    <p>Drop today's ticket export CSV to kick off processing.</p>
+  </header>
+  <main>
+    <div class="dropzone" id="dropzone">
+      <p id="dropzone-label">Drag a CSV file here, or click to choose one</p>
+      <input type="file" id="file-input" accept=".csv,text/csv" />
+    </div>
+    <div id="progress-track" class="progress-track" hidden>
+      <div id="progress-fill" class="progress-fill"></div>
+    </div>
+    <div id="status"></div>
+  </main>
+
+  <script>
+    const MAX_COMPRESSED_BYTES = 90 * 1024 * 1024; // stay under Cloudflare's ~100MB edge request limit
+
+    const dropzone = document.getElementById("dropzone");
+    const fileInput = document.getElementById("file-input");
+    const status = document.getElementById("status");
+    const progressTrack = document.getElementById("progress-track");
+    const progressFill = document.getElementById("progress-fill");
+
+    dropzone.addEventListener("click", () => fileInput.click());
+
+    dropzone.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      dropzone.classList.add("dragover");
+    });
+
+    dropzone.addEventListener("dragleave", () => {
+      dropzone.classList.remove("dragover");
+    });
+
+    dropzone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      dropzone.classList.remove("dragover");
+      const file = e.dataTransfer.files[0];
+      if (file) uploadFile(file);
+    });
+
+    fileInput.addEventListener("change", () => {
+      const file = fileInput.files[0];
+      if (file) uploadFile(file);
+    });
+
+    async function gzip(file) {
+      const compressedStream = file.stream().pipeThrough(new CompressionStream("gzip"));
+      return new Response(compressedStream).blob();
+    }
+
+    function uploadWithProgress(blob) {
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", "/api/upload");
+        xhr.setRequestHeader("Content-Type", "application/gzip");
+
+        xhr.upload.addEventListener("progress", (e) => {
+          if (!e.lengthComputable) return;
+          const pct = Math.round((e.loaded / e.total) * 100);
+          progressFill.style.width = `${pct}%`;
+          setStatus(`Uploading… ${pct}%`, "");
+        });
+
+        xhr.addEventListener("load", () => {
+          let body = {};
+          try {
+            body = JSON.parse(xhr.responseText);
+          } catch {}
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(body);
+          } else {
+            reject(new Error(body.error || `Upload failed (${xhr.status})`));
+          }
+        });
+
+        xhr.addEventListener("error", () => reject(new Error("Network error during upload.")));
+
+        xhr.send(blob);
+      });
+    }
+
+    async function uploadFile(file) {
+      if (!file.name.toLowerCase().endsWith(".csv")) {
+        setStatus("Please choose a .csv file.", "error");
+        return;
+      }
+
+      try {
+        setStatus(`Compressing ${file.name}…`, "");
+        progressTrack.hidden = false;
+        progressFill.style.width = "0%";
+
+        const compressed = await gzip(file);
+
+        if (compressed.size > MAX_COMPRESSED_BYTES) {
+          throw new Error(
+            `Even compressed, this file is ${(compressed.size / 1e6).toFixed(0)}MB — too large ` +
+            `for a single upload. Try exporting a shorter date range.`
+          );
+        }
+
+        const result = await uploadWithProgress(compressed);
+        setStatus(`Uploaded as ${result.key}. Processing has been triggered.`, "ok");
+      } catch (err) {
+        setStatus(err.message || "Upload failed.", "error");
+      } finally {
+        progressTrack.hidden = true;
+      }
+    }
+
+    function setStatus(message, kind) {
+      status.textContent = message;
+      status.className = kind;
+    }
+  </script>
+</body>
+</html>

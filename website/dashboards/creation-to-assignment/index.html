@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Creation to Assignment — Freshdesk Analytics Dashboards</title>
+  <link rel="stylesheet" href="/style.css" />
+  <link rel="stylesheet" href="/dashboard-common.css" />
+</head>
+<body class="viz-root">
+  <nav class="top-links">
+    <a href="/">Home</a>
+    <a href="/upload/">Upload export</a>
+  </nav>
+  <header>
+    <h1>Creation to Assignment Report</h1>
+    <p>Ageing (in days) from ticket creation to each group's assignment, bucketed by TAT.</p>
+  </header>
+  <main>
+    <div id="status" class="status-message">Loading…</div>
+
+    <div id="dashboard" hidden>
+      <div class="controls-row">
+        <div>
+          <label for="month-select">Month</label>
+          <select id="month-select"></select>
+        </div>
+        <div class="week-toggle">
+          <button id="view-month" class="active" type="button">By month</button>
+          <button id="view-week" type="button">By week</button>
+        </div>
+      </div>
+
+      <div id="week-tabs" class="week-tabs" hidden></div>
+
+      <div class="legend">
+        <span>Share of that TAT type's tickets in this month:</span>
+        <span class="ramp"></span>
+        <span>low → high</span>
+      </div>
+
+      <table class="heatmap">
+        <thead>
+          <tr id="header-row"></tr>
+        </thead>
+        <tbody id="grid-body"></tbody>
+      </table>
+    </div>
+  </main>
+
+  <script>
+    const statusEl = document.getElementById("status");
+    const dashboardEl = document.getElementById("dashboard");
+    const monthSelect = document.getElementById("month-select");
+    const viewMonthBtn = document.getElementById("view-month");
+    const viewWeekBtn = document.getElementById("view-week");
+    const weekTabsEl = document.getElementById("week-tabs");
+    const headerRowEl = document.getElementById("header-row");
+    const gridBodyEl = document.getElementById("grid-body");
+
+    let data = null;
+    let mode = "month"; // "month" | "week"
+    let selectedMonth = null;
+    let selectedWeek = null;
+
+    async function load() {
+      try {
+        const response = await fetch("/api/dashboards/creation-to-assignment");
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          throw new Error(body.error || `Request failed (${response.status})`);
+        }
+        data = await response.json();
+        if (!data.months || data.months.length === 0) {
+          throw new Error("No months in the processed data yet.");
+        }
+        selectedMonth = data.months[data.months.length - 1];
+        selectedWeek = data.weeks[0];
+        populateMonthSelect();
+        statusEl.hidden = true;
+        dashboardEl.hidden = false;
+        render();
+      } catch (err) {
+        statusEl.textContent = err.message || "Failed to load dashboard data.";
+      }
+    }
+
+    function populateMonthSelect() {
+      monthSelect.innerHTML = "";
+      for (const month of data.months) {
+        const option = document.createElement("option");
+        option.value = month;
+        option.textContent = month;
+        if (month === selectedMonth) option.selected = true;
+        monthSelect.appendChild(option);
+      }
+    }
+
+    function populateWeekTabs() {
+      weekTabsEl.innerHTML = "";
+      for (const week of data.weeks) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = week;
+        button.className = week === selectedWeek ? "active" : "";
+        button.addEventListener("click", () => {
+          selectedWeek = week;
+          for (const btn of weekTabsEl.children) {
+            btn.classList.toggle("active", btn.textContent === week);
+          }
+          render();
+        });
+        weekTabsEl.appendChild(button);
+      }
+    }
+
+    function currentGrid() {
+      const monthEntry = data.monthly[selectedMonth];
+      if (mode === "month") return monthEntry;
+      return data.weekly[selectedMonth][selectedWeek];
+    }
+
+    function render() {
+      const columns = data.buckets;
+      headerRowEl.innerHTML = "";
+      const cornerTh = document.createElement("th");
+      headerRowEl.appendChild(cornerTh);
+      for (const bucket of columns) {
+        const th = document.createElement("th");
+        th.textContent = bucket;
+        headerRowEl.appendChild(th);
+      }
+      const totalTh = document.createElement("th");
+      totalTh.textContent = "Total";
+      headerRowEl.appendChild(totalTh);
+
+      const grid = currentGrid();
+      gridBodyEl.innerHTML = "";
+      for (const row of data.rows) {
+        const tr = document.createElement("tr");
+        const rowTh = document.createElement("th");
+        rowTh.className = "row-label";
+        rowTh.textContent = row;
+        tr.appendChild(rowTh);
+
+        const counts = grid.counts[row];
+        const percentages = grid.percentages[row];
+        let total = 0;
+
+        for (const bucket of columns) {
+          const count = counts[bucket];
+          const pct = percentages[bucket];
+          total += count;
+
+          const td = document.createElement("td");
+          td.className = "cell";
+          const alpha = count === 0 ? 0 : 0.08 + (pct / 100) * 0.77;
+          td.style.backgroundColor = `rgba(var(--heat-rgb), ${alpha})`;
+
+          const countSpan = document.createElement("span");
+          countSpan.className = "count";
+          countSpan.textContent = count;
+          const pctSpan = document.createElement("span");
+          pctSpan.className = "pct";
+          pctSpan.textContent = `${pct}%`;
+
+          td.appendChild(countSpan);
+          td.appendChild(pctSpan);
+          tr.appendChild(td);
+        }
+
+        const totalTd = document.createElement("td");
+        totalTd.className = "total";
+        totalTd.textContent = total;
+        tr.appendChild(totalTd);
+
+        gridBodyEl.appendChild(tr);
+      }
+    }
+
+    monthSelect.addEventListener("change", () => {
+      selectedMonth = monthSelect.value;
+      render();
+    });
+
+    viewMonthBtn.addEventListener("click", () => {
+      mode = "month";
+      viewMonthBtn.classList.add("active");
+      viewWeekBtn.classList.remove("active");
+      weekTabsEl.hidden = true;
+      render();
+    });
+
+    viewWeekBtn.addEventListener("click", () => {
+      mode = "week";
+      viewWeekBtn.classList.add("active");
+      viewMonthBtn.classList.remove("active");
+      populateWeekTabs();
+      weekTabsEl.hidden = false;
+      render();
+    });
+
+    load();
+  </script>
+</body>
+</html>

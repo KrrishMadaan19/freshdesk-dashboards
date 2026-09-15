@@ -1,0 +1,177 @@
+.viz-root {
+  color-scheme: light;
+  --surface-1: #fcfcfb;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #898781;
+  --gridline: #e1e0d9;
+  --border: rgba(11, 11, 11, 0.1);
+  --heat-rgb: 42, 120, 214;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) .viz-root {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #898781;
+    --gridline: #2c2c2a;
+    --border: rgba(255, 255, 255, 0.1);
+    --heat-rgb: 57, 135, 229;
+  }
+}
+
+:root[data-theme="dark"] .viz-root {
+  color-scheme: dark;
+  --surface-1: #1a1a19;
+  --text-primary: #ffffff;
+  --text-secondary: #c3c2b7;
+  --text-muted: #898781;
+  --gridline: #2c2c2a;
+  --border: rgba(255, 255, 255, 0.1);
+  --heat-rgb: 57, 135, 229;
+}
+
+.controls-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+
+.controls-row label {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin-right: 0.4rem;
+}
+
+.controls-row select {
+  background: var(--surface-1);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.9rem;
+}
+
+.week-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.week-toggle button {
+  background: var(--surface-1);
+  color: var(--text-secondary);
+  border: none;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.week-toggle button.active {
+  background: rgba(var(--heat-rgb), 0.85);
+  color: #fff;
+}
+
+.week-tabs {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+}
+
+.week-tabs[hidden] {
+  display: none;
+}
+
+.week-tabs button {
+  background: var(--surface-1);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.3rem 0.65rem;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.week-tabs button.active {
+  border-color: rgba(var(--heat-rgb), 0.85);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+table.heatmap {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  background: var(--surface-1);
+}
+
+table.heatmap th,
+table.heatmap td {
+  border: 1px solid var(--gridline);
+  padding: 0.5rem 0.6rem;
+  text-align: center;
+}
+
+table.heatmap thead th {
+  color: var(--text-secondary);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+table.heatmap th.row-label {
+  text-align: left;
+  color: var(--text-primary);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+table.heatmap td.cell {
+  font-variant-numeric: tabular-nums;
+}
+
+table.heatmap td.cell .count {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+table.heatmap td.cell .pct {
+  display: block;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+}
+
+table.heatmap td.total {
+  font-weight: 600;
+  color: var(--text-primary);
+  background: transparent !important;
+}
+
+.legend {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 1rem 0 0.5rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.legend .ramp {
+  width: 120px;
+  height: 10px;
+  border-radius: 4px;
+  background: linear-gradient(to right, rgba(var(--heat-rgb), 0.06), rgba(var(--heat-rgb), 0.85));
+  border: 1px solid var(--border);
+}
+
+.status-message {
+  padding: 1.5rem;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  text-align: center;
+}

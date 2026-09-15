@@ -1,0 +1,7 @@
+name = "freshdesk-dashboards"
+pages_build_output_dir = "website"
+compatibility_date = "2026-08-24"
+
+[[kv_namespaces]]
+binding = "TICKETS_KV"
+id = "7b9a6c8cde134ee8b10922397ea2d006"

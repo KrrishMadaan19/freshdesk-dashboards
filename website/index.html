@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Freshdesk Analytics Dashboards</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <nav class="top-links">
+    <a href="/upload/">Upload export</a>
+  </nav>
+  <header>
+    <h1>Freshdesk Analytics Dashboards</h1>
+    <p>Sections appear here as each dashboard is built.</p>
+  </header>
+  <main>
+    <ul class="dashboard-list" id="dashboard-list"></ul>
+    <p class="empty-state" id="empty-state">No dashboards yet — check back soon.</p>
+  </main>
+
+  <script>
+    // Add an entry here each time a new dashboard section ships.
+    const dashboards = [
+      { name: "Creation to Assignment", href: "/dashboards/creation-to-assignment/" },
+    ];
+
+    const list = document.getElementById("dashboard-list");
+    const emptyState = document.getElementById("empty-state");
+
+    if (dashboards.length > 0) {
+      emptyState.remove();
+      for (const d of dashboards) {
+        const li = document.createElement("li");
+        const a = document.createElement("a");
+        a.href = d.href;
+        a.textContent = d.name;
+        li.appendChild(a);
+        list.appendChild(li);
+      }
+    }
+  </script>
+</body>
+</html>
