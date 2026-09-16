@@ -36,7 +36,7 @@ Processed dashboard JSON in KV  ->  Cloudflare Pages (static site) reads latest 
 
 ## Cloudflare resources
 
-- KV namespace: `freshdesk-dashboards` (id `7b9a6c8cde134ee8b10922397ea2d006`), bound
+- KV namespace: `freshdesk-dashboards` (id `8b60514429c14289aad068539e588e15`), bound
   as `TICKETS_KV` in the Pages Function via `wrangler.toml`.
 - Pages project: `freshdesk-dashboards`, deployed from `website/` by
   `.github/workflows/deploy-pages.yml` on every push to `main`.
