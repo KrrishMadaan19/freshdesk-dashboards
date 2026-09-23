@@ -2,6 +2,14 @@
 
 Source: `AUTO - DASHBOARD` sheet, reading from `RAW DATA June onwards`.
 
+> **Correction (2026-09-23):** the line above is wrong for `AUTO -
+> DASHBOARD` specifically — see "Two different raw sheets" below. It reads
+> from the legacy `RAW DATA` sheet, not `RAW DATA June onwards`. Only
+> `Weekly View` (and therefore the website, which only builds the weekly
+> drill-down + a from-scratch monthly rollup off the merged master
+> dataset, not off `AUTO - DASHBOARD` directly) reads `RAW DATA June
+> onwards`.
+
 ## Step 1 — per-ticket calculated columns (computed once per raw data refresh)
 
 Six TAT types, each with an **ageing** column (days, integer) and a **TAT
@@ -282,3 +290,90 @@ cleanup rules including the partner-exclusion case, and a regression test
 for the `dayfirst`-on-ISO bug specifically) before this real-data
 validation pass. Both together are the basis for treating this dashboard
 as validated.
+
+## Re-verification against a fresh workbook (2026-09-23)
+
+The user reported the website's Weekly View "SP TO SPARE TAT — PARTNER
+(YES)" numbers still looked wrong and shared a new copy of the live
+workbook (`CREATION TO ASSIGNMENT 1ST JAN'26 TO 22ND SEP'26(copy).xlsb`,
+177,276 rows in `RAW DATA June onwards`). Re-derived every formula from
+scratch (via Excel COM/xlwings, not just cached values) rather than
+trusting the conclusion above at face value.
+
+**Two different raw sheets feed two different views, and only one still
+has the drag-error bug:**
+
+- `Weekly View` reads from `RAW DATA June onwards`. In *this* sheet, the
+  Spare TAT bucket column (`EH`) **self-references correctly on every row
+  checked** (rows 2–6, 13, 19, 31, 40, 58, 59, 65, 69, and scattered rows
+  through 177,276) — **no drag-error**. The Spare ageing column (`EG`) is
+  genuinely partner-conditional exactly as documented (YES → base date
+  `DR` Service Partner Assigned Date Stamp; NO → base date `I` Created
+  time). This matches `creation_to_assignment.py`'s `_spare_bucket` /
+  `ageing_days` / `spare_base` logic **formula-for-formula**.
+- `AUTO - DASHBOARD` (the monthly matrix) actually reads from the
+  **legacy `RAW DATA` sheet** (135,327 rows), not `RAW DATA June
+  onwards` as this doc's opening line claims. In *that* sheet, the
+  drag-error is still live and confirmed at rows 100, 5000, 25000,
+  50000, 75000, 100000, 125000, and the last row 135327 (`EK135327`
+  references `EJ135328` — one row past the end of the data).
+
+**Conclusion: the "website deliberately shows the corrected version, sheet
+has a drag-error" story from 2026-08-24 is still true, but only applies to
+`AUTO - DASHBOARD` (monthly) vs. the legacy `RAW DATA` sheet.** For the
+*weekly* view specifically, the sheet the website should match
+(`Weekly View` / `RAW DATA June onwards`) has no bug today — whether it
+was fixed after 2026-08-24 or was never affected isn't known. Either way,
+if the website's weekly Spare-YES numbers don't match this file's Weekly
+View, the formula logic is not the suspect anymore — look at
+date-parsing/preprocessing instead (same class of bug this dashboard hit
+twice before). Prime suspects: `Spare Group Assignment` (not covered by
+any `preprocess_raw.py` rule, still parsed defensively via
+`parse_ddmmyyyy`) and `Service Partner Assigned Date Stamp` (covered by
+rule 5's Created-time backfill — an assumption never independently
+re-verified against a real file's actual populated `DR` values, only
+inferred from the aggregate count gap it closed).
+
+**Column letters have drifted and now disagree between the two raw
+sheets** (confirmed via this file's header rows — ignore any letter in
+Step 1/2/3 above when cross-checking a live file, they're stale):
+
+| Header | `RAW DATA June onwards` (Weekly View's source) | Legacy `RAW DATA` (AUTO-DASHBOARD's source) |
+|---|---|---|
+| Ticket ID | A | — |
+| Group | H | — |
+| Created time | I | I |
+| Resolved time | K | — |
+| Partner Name | AF | AG |
+| WhatsApp Survey Received | BE | — |
+| Refund Group Assignment | BL | — |
+| Replacement Group Assignment | BM | — |
+| Close Looping Group Assignment | BQ | — |
+| Inward Payment Group Assignment | BR | — |
+| Spare Group Assignment | BT | BV |
+| UTR | CQ | — |
+| Service Partner Assigned Date Stamp | DR | DW |
+| Spare ageing / TAT bucket | EG / EH | EJ / EK |
+| Created Month | EO | ER |
+| Partner Y/N | EP | ES |
+| Created Week | EQ | *(no equivalent — legacy sheet has no weekly breakdown)* |
+
+This drift is **not a code risk** — `scripts/columns.py` and every
+transform script already key off header *names*, never letters — but it
+means this doc's letter references are actively misleading if anyone
+manually cross-checks them against a live file. Prefer header names when
+adding to this doc going forward.
+
+**Ground truth for a concrete diff**, read directly from `Weekly View`'s
+live Excel-computed values (buckets `0, 1, 2, 3, 4-5, 6-7, 7+`):
+
+| Week | SP-Spare YES | SP-Spare NO |
+|---|---|---|
+| Sep'26 WK1 | 18, 34, 40, 33, 37, 19, 53 | 28, 12, 8, 1, 4, 2, 4 |
+| Sep'26 WK2 | 16, 36, 27, 25, 37, 36, 32 | 23, 6, 7, 6, 11, 9, 13 |
+
+Next step: run this file's raw ticket data through the real
+`preprocess_raw.py` + `creation_to_assignment.py` pipeline and diff
+against the table above — don't treat the formula-logic match above as
+proof the website is correct end-to-end; the last two real bugs this
+dashboard had were both in date parsing, not formula logic.
