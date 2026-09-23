@@ -45,18 +45,21 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import columns as col  # noqa: E402
 import date_utils  # noqa: E402
 
-COL_CREATED = "Created time"
-COL_RESOLVED = "Resolved time"
-COL_WHATSAPP_SURV = "WhatsApp Survey Received"
-COL_GROUP = "Group"
-COL_REPL_GROUP = "Replacement Group Assignment"
-COL_UTR = "UTR"
-COL_REFUND_GROUP = "Refund Group Assignment"
-COL_CLOSE_LOOP = "Close Looping Group Assignment"
-COL_PARTNER = "Partner Name"
-COL_SP_ASSIGN_DT = "Service Partner Assigned Date Stamp"
+# Local aliases into the shared column-name module (see columns.py) -- kept
+# short since these are referenced constantly below.
+COL_CREATED = col.CREATED_TIME
+COL_RESOLVED = col.RESOLVED_TIME
+COL_WHATSAPP_SURV = col.WHATSAPP_SURVEY_RECEIVED
+COL_GROUP = col.GROUP
+COL_REPL_GROUP = col.REPLACEMENT_GROUP_ASSIGNMENT
+COL_UTR = col.UTR
+COL_REFUND_GROUP = col.REFUND_GROUP_ASSIGNMENT
+COL_CLOSE_LOOP = col.CLOSE_LOOPING_GROUP_ASSIGNMENT
+COL_PARTNER = col.PARTNER_NAME
+COL_SP_ASSIGN_DT = col.SERVICE_PARTNER_ASSIGNED_DATE_STAMP
 
 EXCLUDED_PARTNERS = ["Chat 360", "Product Non-Serviceable", "Service Denial"]
 

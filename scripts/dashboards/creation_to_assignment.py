@@ -15,19 +15,21 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import columns as col  # noqa: E402
 import date_utils  # noqa: E402
 import kv_store  # noqa: E402
 
 MASTER_PREFIX = "master:tickets"
 PROCESSED_PREFIX = "processed:creation-to-assignment"
 
-CREATED_COL = "Created time"
-PARTNER_COL = "Partner Name"
-INWARD_COL = "Inward Payment Group Assignment"
-SPARE_COL = "Spare Group Assignment"
-REFUND_COL = "Refund Group Assignment"
-REPLACEMENT_COL = "Replacement Group Assignment"
-SP_COL = "Service Partner Assigned Date Stamp"
+# Local aliases into the shared column-name module (see columns.py).
+CREATED_COL = col.CREATED_TIME
+PARTNER_COL = col.PARTNER_NAME
+INWARD_COL = col.INWARD_PAYMENT_GROUP_ASSIGNMENT
+SPARE_COL = col.SPARE_GROUP_ASSIGNMENT
+REFUND_COL = col.REFUND_GROUP_ASSIGNMENT
+REPLACEMENT_COL = col.REPLACEMENT_GROUP_ASSIGNMENT
+SP_COL = col.SERVICE_PARTNER_ASSIGNED_DATE_STAMP
 
 BUCKETS = ["0", "1", "2", "3", "4-5", "6-7", "7+"]
 WEEKS = ["WK 1", "WK 2", "WK 3", "WK 4", "WK 5"]

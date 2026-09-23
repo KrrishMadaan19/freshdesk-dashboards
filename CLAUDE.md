@@ -97,6 +97,12 @@ freshdesk-dashboards/
 - Validate every transform script's output against the real numbers in the
   source Excel dashboard for a known date range before wiring it into the
   live pipeline.
+- **Freshdesk column names are defined once, in `scripts/columns.py`** —
+  every script that reads a raw/master column imports its name from there
+  (`import columns as col`, then `col.PARTNER_NAME` etc.) instead of
+  hardcoding the string again. If a column you need isn't in `columns.py`
+  yet, add it there rather than inlining a new string constant. This is so
+  a future Freshdesk column rename only needs updating in one place.
 
 ## Session workflow
 

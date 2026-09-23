@@ -13,10 +13,11 @@ import sys
 import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import columns as col  # noqa: E402
 import kv_store  # noqa: E402
 import preprocess_raw  # noqa: E402
 
-TICKET_ID_COLUMN = "Ticket ID"
+TICKET_ID_COLUMN = col.TICKET_ID
 MASTER_PREFIX = "master:tickets"
 
 
