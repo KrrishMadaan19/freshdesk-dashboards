@@ -5,6 +5,14 @@
   --text: #e6e8eb;
   --muted: #9aa1ac;
   --accent: #4f8cff;
+
+  /* Card accent palette -- cycled per dashboard card so the homepage
+     doesn't read as one flat block once more dashboards ship. */
+  --accent-blue: #4f8cff;
+  --accent-violet: #9b6bff;
+  --accent-teal: #2dd4bf;
+  --accent-coral: #ff8a65;
+  --accent-pink: #f472b6;
 }
 
 * {
@@ -29,9 +37,27 @@ header h1 {
   font-size: 1.75rem;
 }
 
+header .accent-text {
+  background: linear-gradient(90deg, var(--accent-blue), var(--accent-violet));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
 header p {
   margin: 0;
   color: var(--muted);
+}
+
+.progress-pill {
+  display: inline-block;
+  margin-top: 0.9rem;
+  padding: 0.3rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.78rem;
+  color: var(--muted);
+  background: var(--panel);
 }
 
 main {
@@ -63,21 +89,92 @@ nav.top-links a:hover {
   margin: 1.5rem 0 0;
   padding: 0;
   display: grid;
-  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 1rem;
 }
 
-.dashboard-list li a {
-  display: block;
-  padding: 1rem 1.25rem;
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.dashboard-card {
+  /* --card-accent is set inline per card (see index.html) so cards cycle
+     through the palette; this is just the fallback. */
+  --card-accent: var(--accent-blue);
+  animation: card-in 0.35s ease both;
+}
+
+.dashboard-card a {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  height: 100%;
+  padding: 1.1rem 1.25rem 1.25rem;
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-top: 3px solid var(--card-accent);
+  border-radius: 10px;
   color: var(--text);
   text-decoration: none;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
 }
 
-.dashboard-list li a:hover {
-  border-color: var(--accent);
+.dashboard-card a:hover {
+  transform: translateY(-3px);
+  border-color: var(--card-accent);
+  box-shadow: 0 10px 24px -12px var(--card-accent);
+}
+
+.card-top {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.card-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--card-accent);
+  flex-shrink: 0;
+}
+
+.card-status {
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.dashboard-card h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.card-desc {
+  margin: 0;
+  flex-grow: 1;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.card-arrow {
+  align-self: flex-end;
+  color: var(--card-accent);
+  font-size: 1.1rem;
+  transition: transform 0.15s ease;
+}
+
+.dashboard-card a:hover .card-arrow {
+  transform: translateX(4px);
 }
 
 .empty-state {

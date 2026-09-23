@@ -11,8 +11,9 @@
     <a href="/upload/">Upload export</a>
   </nav>
   <header>
-    <h1>Freshdesk Analytics Dashboards</h1>
-    <p>Sections appear here as each dashboard is built.</p>
+    <h1>Freshdesk <span class="accent-text">Analytics</span> Dashboards</h1>
+    <p>Replacing a decade of manual Excel exports, one dashboard at a time.</p>
+    <div class="progress-pill" id="progress-pill"></div>
   </header>
   <main>
     <ul class="dashboard-list" id="dashboard-list"></ul>
@@ -20,24 +21,86 @@
   </main>
 
   <script>
-    // Add an entry here each time a new dashboard section ships.
+    // Add an entry here each time a new dashboard section ships. `id` must
+    // match the transform script's PROCESSED_PREFIX suffix (the name used
+    // in /api/dashboards/<id>), so the "data through" badge can look it up.
     const dashboards = [
-      { name: "Creation to Assignment", href: "/dashboards/creation-to-assignment/" },
+      {
+        id: "creation-to-assignment",
+        name: "Creation to Assignment",
+        href: "/dashboards/creation-to-assignment/",
+        description: "Ageing from ticket creation to inward, spare, refund, replacement and SP assignment.",
+      },
+    ];
+
+    // Total planned per the project roadmap (see CLAUDE.md) — used only for
+    // the "X of 10 live" pill, purely informational.
+    const TOTAL_PLANNED = 10;
+
+    const ACCENTS = [
+      "var(--accent-blue)",
+      "var(--accent-violet)",
+      "var(--accent-teal)",
+      "var(--accent-coral)",
+      "var(--accent-pink)",
     ];
 
     const list = document.getElementById("dashboard-list");
     const emptyState = document.getElementById("empty-state");
+    const progressPill = document.getElementById("progress-pill");
+
+    progressPill.textContent = `${dashboards.length} of ${TOTAL_PLANNED} dashboards live`;
 
     if (dashboards.length > 0) {
       emptyState.remove();
-      for (const d of dashboards) {
+      dashboards.forEach((d, i) => {
         const li = document.createElement("li");
+        li.className = "dashboard-card";
+        li.style.setProperty("--card-accent", ACCENTS[i % ACCENTS.length]);
+        li.style.animationDelay = `${i * 60}ms`;
+
         const a = document.createElement("a");
         a.href = d.href;
-        a.textContent = d.name;
+
+        const top = document.createElement("div");
+        top.className = "card-top";
+        const dot = document.createElement("span");
+        dot.className = "card-dot";
+        const status = document.createElement("span");
+        status.className = "card-status";
+        status.id = `status-${d.id}`;
+        status.textContent = "Checking data…";
+        top.appendChild(dot);
+        top.appendChild(status);
+
+        const title = document.createElement("h3");
+        title.textContent = d.name;
+
+        const desc = document.createElement("p");
+        desc.className = "card-desc";
+        desc.textContent = d.description || "";
+
+        const arrow = document.createElement("span");
+        arrow.className = "card-arrow";
+        arrow.textContent = "→";
+
+        a.appendChild(top);
+        a.appendChild(title);
+        a.appendChild(desc);
+        a.appendChild(arrow);
         li.appendChild(a);
         list.appendChild(li);
-      }
+
+        fetch(`/api/dashboards/${d.id}`)
+          .then((r) => (r.ok ? r.json() : Promise.reject()))
+          .then((data) => {
+            const latest = data.months && data.months[data.months.length - 1];
+            status.textContent = latest ? `Data through ${latest}` : "No data yet";
+          })
+          .catch(() => {
+            status.textContent = "No data yet";
+          });
+      });
     }
   </script>
 </body>

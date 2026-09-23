@@ -40,6 +40,15 @@ Processed dashboard JSON in KV  ->  Cloudflare Pages (static site) reads latest 
   as `TICKETS_KV` in the Pages Function via `wrangler.toml`.
 - Pages project: `freshdesk-dashboards`, deployed from `website/` by
   `.github/workflows/deploy-pages.yml` on every push to `main`.
+- **Manual deploys must run with `website/` as the working directory**:
+  `cd website && npx wrangler pages deploy .` -- NOT `wrangler pages deploy
+  website` from the repo root. The latter silently fails to bundle
+  `website/functions/` (wrangler resolves the Functions dir relative to
+  the process's cwd, not the deploy-target argument), so `/api/*` routes
+  fall through to static-asset handling and start returning the homepage
+  HTML instead of JSON. This exact regression happened once (2026-09-23) —
+  the CI workflow already gets this right via `workingDirectory: website`
+  + `command: pages deploy .`, so mirror that for any manual deploy.
 
 ## Folder structure
 
