@@ -377,3 +377,60 @@ Next step: run this file's raw ticket data through the real
 against the table above — don't treat the formula-logic match above as
 proof the website is correct end-to-end; the last two real bugs this
 dashboard had were both in date parsing, not formula logic.
+
+## Real bug #3 found and fixed (2026-09-23): SP Assigned time-of-day truncation
+
+Ran the raw ticket data from the fresh workbook (exported via Excel COM,
+177,275 rows) through the actual `preprocess_raw.py` + a faithful
+reproduction of `creation_to_assignment.py`'s logic, diffed against the
+ground-truth table above. Result: **`PARTNER-NO` matched exactly on both
+weeks (all 14 numbers); `PARTNER-YES` was off on both weeks**, with the
+row *totals* close to the sheet's (e.g. 235 actual vs. 234 expected for
+WK1) but individual bucket counts shifted toward higher day-counts —
+same population of tickets, wrong bucket per ticket.
+
+**Root cause:** `preprocess_raw.py` truncated `Service Partner Assigned
+Date Stamp` to midnight (`.dt.normalize()`), same as every other cleaned
+date column. That's correct for columns compared against `Created time`
+(also midnight — rule 1) since `INT(midnight_a − midnight_b)` only
+depends on calendar days regardless of any truncation. But the Spare-YES
+formula compares it against `Spare Group Assignment`, which is **not**
+touched by `preprocess_raw.py` at all and keeps its real time-of-day.
+Forcing one side of that specific subtraction to midnight while the other
+keeps a real time-of-day silently shifts the day-count for any ticket
+where the two timestamps' times-of-day don't happen to align — exactly
+the "same population, wrong bucket" pattern observed.
+
+Verified with a controlled hypothesis test: keeping `Service Partner
+Assigned Date Stamp`'s original time-of-day (falling back to `Created
+time`'s midnight value only for genuinely backfilled-blank rows, per
+rule 5) produced an **exact match, all 28 numbers**, both weeks:
+
+| Week | Partner | Buckets `0,1,2,3,4-5,6-7,7+` |
+|---|---|---|
+| Sep'26 WK1 | YES | 18, 34, 40, 33, 37, 19, 53 — exact |
+| Sep'26 WK1 | NO | 28, 12, 8, 1, 4, 2, 4 — exact |
+| Sep'26 WK2 | YES | 16, 36, 27, 25, 37, 36, 32 — exact |
+| Sep'26 WK2 | NO | 23, 6, 7, 6, 11, 9, 13 — exact |
+
+Also verified `CREATION TO SP TAT` (the *other* formula that reads
+`Service Partner Assigned Date Stamp`, against `Created time`) is
+**byte-for-byte unaffected** by this change (mathematically expected,
+since `Created time` is always midnight, so the truncation argument above
+applies there too — confirmed empirically as well, not just by proof).
+
+**Fix applied in `scripts/preprocess_raw.py`:** `Service Partner Assigned
+Date Stamp` was pulled out of `CUSTOM_DATE_COLS` (which still normalizes
+`Refund`/`Replacement`/`Close Looping Group Assignment` — those are only
+ever compared against `Created time`, so normalizing them is correct and
+unchanged) and is now parsed and written back separately, keeping its
+full timestamp (`%Y-%m-%d %H:%M:%S`) instead of being truncated to
+`%Y-%m-%d`. Rule 5's backfill logic is unchanged — blank values still get
+filled with `Created time`'s (midnight) value.
+
+**This means every website upload prior to this fix undercounted "SP TO
+SPARE TAT — PARTNER (YES)" in the wrong buckets** (skewed toward higher
+day-counts than reality) for any month it had processed. Re-upload the
+current master dataset (or wait for the next scheduled upload) and
+re-run `scripts/dashboards/creation_to_assignment.py` to correct
+already-published numbers once this fix is deployed.

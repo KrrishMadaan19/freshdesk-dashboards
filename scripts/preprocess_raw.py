@@ -38,6 +38,25 @@ Rules (unchanged from the original):
 5. Partner Name is set and not one of the excluded pseudo-partners
    (Chat 360 / Product Non-Serviceable / Service Denial) and Service
    Partner Assigned Date Stamp is blank -> fill with Created time.
+
+Service Partner Assigned Date Stamp keeps its time-of-day (2026-09-23
+fix): every other cleaned date column here is stored date-only because
+it's always compared against Created time, which is ALSO date-only
+(rule 1) -- INT(midnight_a - midnight_b) only depends on calendar days,
+so truncating both sides is harmless. Service Partner Assigned Date
+Stamp is different: the "SP TO SPARE TAT -- PARTNER (YES)" ageing
+formula compares it against Spare Group Assignment, which is NOT
+date-only (it isn't touched by this module at all -- see the module-level
+note below). Truncating just one side of that specific subtraction to
+midnight silently shifts the day-count whenever Spare Group Assignment's
+real time-of-day doesn't happen to align with midnight -- confirmed via
+a live-workbook diff (docs/excel_process_notes/01-creation-to-assignment.md,
+"Re-verification against a fresh workbook") that this was shifting a real
+chunk of tickets into the wrong TAT bucket. Its OTHER use (CREATION TO SP
+TAT, against Created time) is unaffected either way: INT(anything_with_a_
+sub-day_fraction - midnight) always recovers the same whole-day count
+regardless of that fraction, so keeping the time-of-day here fixes the
+Spare-YES case for free without touching the SP TAT case.
 """
 
 import os
@@ -66,7 +85,10 @@ EXCLUDED_PARTNERS = ["Chat 360", "Product Non-Serviceable", "Service Denial"]
 # Freshdesk's own timestamp fields vs. the custom/webhook-populated ones
 # -- see date_utils.py for why these need different parsers.
 NATIVE_TIMESTAMP_COLS = [COL_CREATED, COL_RESOLVED, COL_WHATSAPP_SURV]
-CUSTOM_DATE_COLS = [COL_REPL_GROUP, COL_REFUND_GROUP, COL_CLOSE_LOOP, COL_SP_ASSIGN_DT]
+# Date-only, safe to normalize -- always compared against Created time
+# (also date-only). COL_SP_ASSIGN_DT is handled separately -- see the
+# module docstring for why it must keep its time-of-day.
+CUSTOM_DATE_COLS = [COL_REPL_GROUP, COL_REFUND_GROUP, COL_CLOSE_LOOP]
 
 
 def is_blank(series):
@@ -96,6 +118,12 @@ def process(df):
         if col in df.columns:
             df[col] = date_utils.parse_ddmmyyyy(df[col]).dt.normalize()
 
+    if COL_SP_ASSIGN_DT in df.columns:
+        # No .dt.normalize() here -- see the module docstring. Blank/
+        # unparseable values become NaT, same as is_blank() would flag on
+        # the raw text, so rule 5 below can check .isna() directly.
+        df[COL_SP_ASSIGN_DT] = date_utils.parse_ddmmyyyy(df[COL_SP_ASSIGN_DT])
+
     if COL_GROUP in df.columns and COL_REPL_GROUP in df.columns:
         mask = (df[COL_GROUP].astype(str).str.strip() == "Replacement") & is_blank(df[COL_REPL_GROUP])
         df.loc[mask, COL_REPL_GROUP] = df.loc[mask, COL_CREATED]
@@ -110,11 +138,20 @@ def process(df):
 
     if COL_PARTNER in df.columns and COL_SP_ASSIGN_DT in df.columns:
         partner_excluded = is_blank(df[COL_PARTNER]) | df[COL_PARTNER].isin(EXCLUDED_PARTNERS)
-        mask = (~partner_excluded) & is_blank(df[COL_SP_ASSIGN_DT])
+        mask = (~partner_excluded) & df[COL_SP_ASSIGN_DT].isna()
         df.loc[mask, COL_SP_ASSIGN_DT] = df.loc[mask, COL_CREATED]
 
     for col in NATIVE_TIMESTAMP_COLS + CUSTOM_DATE_COLS:
         if col in df.columns:
             df[col] = df[col].dt.strftime("%Y-%m-%d")
+
+    if COL_SP_ASSIGN_DT in df.columns:
+        # Full timestamp, not date-only -- this is the column whose
+        # time-of-day the Spare-YES ageing formula actually needs (see
+        # module docstring). Backfilled rows (see rule 5 above) got
+        # Created time's value, which is already midnight, so this only
+        # adds real precision for rows that had a genuine SP Assigned
+        # timestamp in the raw export.
+        df[COL_SP_ASSIGN_DT] = df[COL_SP_ASSIGN_DT].dt.strftime("%Y-%m-%d %H:%M:%S")
 
     return df.map(clean_illegal_excel_chars)
