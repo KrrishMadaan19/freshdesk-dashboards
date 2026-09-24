@@ -14,20 +14,60 @@
   </nav>
   <header>
     <h1>Overall Cancelled Tickets Report</h1>
-    <p>Cancelled, spam, auto-closed and forwarded tickets, broken down by reason.</p>
+    <p>Cancelled, spam, auto-closed and forwarded tickets by reason, counted on resolved date.</p>
   </header>
   <main>
     <div id="status" class="status-message">Loading…</div>
+
+    <div id="dashboard" hidden>
+      <div class="controls-row">
+        <div class="week-toggle" id="view-toggle">
+          <button id="view-overall" class="active" type="button">Monthly</button>
+          <button id="view-weekly" type="button">Weekly</button>
+          <button id="view-daily" type="button">Daily</button>
+        </div>
+        <div id="month-picker">
+          <label for="month-select">Month</label>
+          <select id="month-select"></select>
+        </div>
+      </div>
+
+      <div class="table-scroll">
+        <table class="heatmap">
+          <thead>
+            <tr id="header-row"></tr>
+          </thead>
+          <tbody id="grid-body"></tbody>
+        </table>
+      </div>
+
+      <p class="footnote" id="footnote"></p>
+    </div>
   </main>
 
   <script>
     const statusEl = document.getElementById("status");
+    const dashboardEl = document.getElementById("dashboard");
+    const monthSelect = document.getElementById("month-select");
+    const monthPicker = document.getElementById("month-picker");
+    const headerRowEl = document.getElementById("header-row");
+    const gridBodyEl = document.getElementById("grid-body");
+    const footnoteEl = document.getElementById("footnote");
+    const viewButtons = {
+      overall: document.getElementById("view-overall"),
+      weekly: document.getElementById("view-weekly"),
+      daily: document.getElementById("view-daily"),
+    };
 
-    function showEmptyState(message) {
+    let data = null;
+    let view = "overall";
+    let selectedMonth = null;
+
+    function showEmptyState() {
       statusEl.innerHTML = "";
       const line = document.createElement("p");
       line.style.margin = "0 0 0.75rem";
-      line.textContent = message;
+      line.textContent = "No data yet.";
       const hint = document.createElement("p");
       hint.style.margin = "0";
       hint.style.fontSize = "0.85rem";
@@ -38,26 +78,151 @@
       hint.appendChild(document.createTextNode(" to populate this dashboard."));
       statusEl.appendChild(line);
       statusEl.appendChild(hint);
+      dashboardEl.hidden = true;
     }
 
     async function load() {
       try {
         const response = await fetch("/api/dashboards/overall-cancelled");
         if (response.status === 404) {
-          showEmptyState("No data yet.");
+          showEmptyState();
           return;
         }
         if (!response.ok) {
           const body = await response.json().catch(() => ({}));
           throw new Error(body.error || `Request failed (${response.status})`);
         }
-        // The grid is not built yet -- the transform script and this page's
-        // rendering land together once the source workbook's formulas have
-        // been reverse-engineered.
-        showEmptyState("No data yet.");
+        data = await response.json();
+        if (!data.months || data.months.length === 0) {
+          showEmptyState();
+          return;
+        }
+        selectedMonth = data.months[data.months.length - 1];
+        populateMonthSelect();
+        statusEl.hidden = true;
+        dashboardEl.hidden = false;
+        render();
       } catch (err) {
         statusEl.textContent = err.message || "Failed to load dashboard data.";
       }
+    }
+
+    function populateMonthSelect() {
+      monthSelect.innerHTML = "";
+      for (const month of data.months) {
+        const option = document.createElement("option");
+        option.value = month;
+        option.textContent = month;
+        if (month === selectedMonth) option.selected = true;
+        monthSelect.appendChild(option);
+      }
+    }
+
+    function currentColumns() {
+      if (view === "overall") return data.months;
+      if (view === "weekly") return data.weeks;
+      return data.days;
+    }
+
+    function currentGrid() {
+      if (view === "overall") return data.overall;
+      if (view === "weekly") return data.weekly[selectedMonth];
+      return data.daily[selectedMonth];
+    }
+
+    function render() {
+      monthPicker.hidden = view === "overall";
+
+      const columns = currentColumns();
+      const grid = currentGrid();
+
+      headerRowEl.innerHTML = "";
+      const corner = document.createElement("th");
+      corner.textContent = "Resolution type";
+      corner.className = "row-label";
+      headerRowEl.appendChild(corner);
+      for (const c of columns) {
+        const th = document.createElement("th");
+        th.textContent = c;
+        headerRowEl.appendChild(th);
+      }
+      const totalTh = document.createElement("th");
+      totalTh.textContent = "Total";
+      headerRowEl.appendChild(totalTh);
+
+      // Heat scale from the category rows only -- the Grand Total row would
+      // otherwise dominate and flatten every other cell to near-zero shading.
+      let max = 0;
+      for (const row of data.rows) {
+        if (row === "Grand Total") continue;
+        for (const c of columns) max = Math.max(max, grid[row]?.[c] ?? 0);
+      }
+
+      gridBodyEl.innerHTML = "";
+      for (const row of data.rows) {
+        const isTotal = row === "Grand Total";
+        const tr = document.createElement("tr");
+        const rowTh = document.createElement("th");
+        rowTh.className = "row-label";
+        rowTh.textContent = row;
+        if (data.excludedFromTotal && data.excludedFromTotal.includes(row)) {
+          rowTh.title = "Not included in the Grand Total — matches the source workbook";
+          rowTh.textContent = row + " *";
+        }
+        tr.appendChild(rowTh);
+
+        let rowTotal = 0;
+        for (const c of columns) {
+          const count = grid[row]?.[c] ?? 0;
+          rowTotal += count;
+          const td = document.createElement("td");
+          td.className = "cell";
+          if (!isTotal && max > 0 && count > 0) {
+            const alpha = 0.08 + (count / max) * 0.77;
+            td.style.backgroundColor = `rgba(var(--heat-rgb), ${alpha})`;
+          }
+          const countSpan = document.createElement("span");
+          countSpan.className = "count";
+          countSpan.textContent = count.toLocaleString();
+          td.appendChild(countSpan);
+          tr.appendChild(td);
+        }
+
+        const totalTd = document.createElement("td");
+        totalTd.className = "total";
+        totalTd.textContent = rowTotal.toLocaleString();
+        tr.appendChild(totalTd);
+
+        if (isTotal) tr.classList.add("grand-total-row");
+        gridBodyEl.appendChild(tr);
+      }
+
+      const notes = [];
+      if (data.excludedFromTotal && data.excludedFromTotal.length) {
+        notes.push(
+          "* " + data.excludedFromTotal.join(" and ") +
+          " are excluded from the Grand Total, reproducing the source workbook's formula."
+        );
+      }
+      if (data.cutoff) {
+        notes.push("Data through " + data.cutoff + " (day-1 — today's partial data is excluded).");
+      }
+      footnoteEl.textContent = notes.join(" ");
+    }
+
+    monthSelect.addEventListener("change", () => {
+      selectedMonth = monthSelect.value;
+      render();
+    });
+
+    for (const [name, button] of Object.entries(viewButtons)) {
+      button.addEventListener("click", () => {
+        view = name;
+        for (const [n, b] of Object.entries(viewButtons)) {
+          b.classList.toggle("active", n === name);
+        }
+        render();
+      });
     }
 
     load();

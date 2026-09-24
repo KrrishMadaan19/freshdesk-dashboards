@@ -175,3 +175,21 @@ table.heatmap td.total {
   color: var(--text-secondary);
   text-align: center;
 }
+
+/* The daily view is 31 columns wide -- let it scroll sideways rather than
+   squeezing the whole page. */
+.table-scroll {
+  overflow-x: auto;
+}
+
+table.heatmap tr.grand-total-row th,
+table.heatmap tr.grand-total-row td {
+  font-weight: 600;
+  border-top: 2px solid var(--text-muted);
+}
+
+.footnote {
+  margin-top: 0.9rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}

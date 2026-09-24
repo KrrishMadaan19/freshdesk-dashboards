@@ -21,13 +21,27 @@ jobs:
       - name: Install dependencies
         run: pip install -r scripts/requirements.txt
 
-      - name: Merge upload into master dataset
+      - name: Replace master dataset with this upload
         run: python scripts/process_upload.py
 
+      # Every dashboard runs even if an earlier one fails, so one broken
+      # transform can't stop the rest from updating -- but the step still
+      # exits non-zero, so the failure isn't silently swallowed.
       - name: Run dashboard transforms
         run: |
+          failed=""
           for f in scripts/dashboards/*.py; do
             [ -e "$f" ] || continue
-            echo "Running $f"
-            python "$f"
+            echo "::group::$f"
+            if python "$f"; then
+              echo "OK: $f"
+            else
+              echo "::error::Dashboard transform failed: $f"
+              failed="$failed $f"
+            fi
+            echo "::endgroup::"
           done
+          if [ -n "$failed" ]; then
+            echo "Failed transforms:$failed"
+            exit 1
+          fi

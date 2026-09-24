@@ -151,7 +151,14 @@ freshdesk-dashboards/
 - [ ] 2. Pendency View
 - [ ] 3. Daily Pending and Closure Dashboard
 - [ ] 4. C-SAT Tracker Report
-- [ ] 5. Overall Cancelled Report
+- [x] 5. Overall Cancelled Report — *built and validated. Logic proven
+      against the source workbook's own 87,972 raw rows: all four derived
+      helper values (month, day ordinal, week, category) match the
+      workbook's own computed columns on every row, and both ground-truth
+      grids (Aug'26 monthly, Sep'26 WK3) match exactly. See
+      docs/excel_process_notes/05-overall-cancelled.md — note it reproduces
+      one of the workbook's total bugs deliberately, and that the workbook
+      double-counts reopened tickets in the month it's actively appended to.*
 - [ ] 6. Refund TAT Performance
 - [ ] 7. Replacement TAT Performance
 - [ ] 8. Service Partner Closure Bifurcation Report
