@@ -45,6 +45,29 @@ ROWS = [
 ]
 
 
+def required_column(df, name):
+    """Every column is addressed BY NAME, never by position -- the export's
+    column order and column count both change over time. Missing a column
+    the whole report is keyed on is unrecoverable, so say so loudly rather
+    than producing a plausible-looking but wrong grid."""
+    if name not in df.columns:
+        raise RuntimeError(
+            f"Uploaded data is missing required column '{name}'. "
+            f"Columns found: {sorted(df.columns.tolist())}"
+        )
+    return df[name]
+
+
+def optional_date_column(df, name):
+    """A per-TAT date column that simply isn't in this export. Its row ends
+    up empty (every ageing value NaT -> no bucket) instead of crashing the
+    other five rows, which are still perfectly computable."""
+    if name not in df.columns:
+        print(f"WARNING: column '{name}' not present -- its TAT row will be empty")
+        return pd.Series(pd.NaT, index=df.index)
+    return df[name]
+
+
 def ageing_days(end_series, start_series):
     # Both args must already be parsed datetime Series -- main() picks
     # the right date_utils parser per column before calling this, since
@@ -137,19 +160,20 @@ def main():
     # right per-column strategy and written back as unambiguous ISO
     # date-only strings, so parse_native_timestamp (no dayfirst) is safe
     # and sufficient for them here.
-    created = date_utils.parse_native_timestamp(df[CREATED_COL])
-    sp_assigned = date_utils.parse_native_timestamp(df[SP_COL])
-    refund_assigned = date_utils.parse_native_timestamp(df[REFUND_COL])
-    replacement_assigned = date_utils.parse_native_timestamp(df[REPLACEMENT_COL])
+    created = date_utils.parse_native_timestamp(required_column(df, CREATED_COL))
+    sp_assigned = date_utils.parse_native_timestamp(optional_date_column(df, SP_COL))
+    refund_assigned = date_utils.parse_native_timestamp(optional_date_column(df, REFUND_COL))
+    replacement_assigned = date_utils.parse_native_timestamp(optional_date_column(df, REPLACEMENT_COL))
 
     # Inward Payment Group Assignment and Spare Group Assignment are NOT
     # covered by preprocess_raw.py's cleanup rules, so they still arrive
     # as raw, inconsistently-formatted DD-MM-YYYY text and need the
     # defensive element-wise parser.
-    inward_assigned = date_utils.parse_ddmmyyyy(df[INWARD_COL])
-    spare_assigned = date_utils.parse_ddmmyyyy(df[SPARE_COL])
+    inward_assigned = date_utils.parse_ddmmyyyy(optional_date_column(df, INWARD_COL))
+    spare_assigned = date_utils.parse_ddmmyyyy(optional_date_column(df, SPARE_COL))
 
-    partner_yn = np.where(df[PARTNER_COL].fillna("").astype(str).str.strip() == "", "NO", "YES")
+    partner_col = df[PARTNER_COL] if PARTNER_COL in df.columns else pd.Series("", index=df.index)
+    partner_yn = np.where(partner_col.fillna("").astype(str).str.strip() == "", "NO", "YES")
     spare_base = pd.Series(np.where(partner_yn == "YES", sp_assigned, created), index=df.index)
 
     df["_partner_yn"] = partner_yn

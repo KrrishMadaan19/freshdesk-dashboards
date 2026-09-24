@@ -63,16 +63,41 @@
     let selectedMonth = null;
     let selectedWeek = null;
 
+    function showEmptyState() {
+      statusEl.innerHTML = "";
+      const line = document.createElement("p");
+      line.style.margin = "0 0 0.75rem";
+      line.textContent = "No data yet.";
+      const hint = document.createElement("p");
+      hint.style.margin = "0";
+      hint.style.fontSize = "0.85rem";
+      const link = document.createElement("a");
+      link.href = "/upload/";
+      link.textContent = "Upload a Freshdesk export";
+      hint.appendChild(link);
+      hint.appendChild(document.createTextNode(" to populate this dashboard."));
+      statusEl.appendChild(line);
+      statusEl.appendChild(hint);
+      dashboardEl.hidden = true;
+    }
+
     async function load() {
       try {
         const response = await fetch("/api/dashboards/creation-to-assignment");
+        // 404 = nothing has been uploaded yet, which is a normal state,
+        // not an error worth showing raw API text for.
+        if (response.status === 404) {
+          showEmptyState();
+          return;
+        }
         if (!response.ok) {
           const body = await response.json().catch(() => ({}));
           throw new Error(body.error || `Request failed (${response.status})`);
         }
         data = await response.json();
         if (!data.months || data.months.length === 0) {
-          throw new Error("No months in the processed data yet.");
+          showEmptyState();
+          return;
         }
         selectedMonth = data.months[data.months.length - 1];
         selectedWeek = data.weeks[0];

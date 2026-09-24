@@ -1,7 +1,24 @@
 """Triggered by the upload page's repository_dispatch event.
 
-Downloads the most recent raw export from Workers KV and upserts it into
-the master dataset (matched by Ticket ID).
+Downloads the most recent raw export from Workers KV, cleans it, and makes
+it THE dataset -- the latest upload fully replaces whatever was there
+before.
+
+Why replace instead of upsert-by-Ticket-ID (which is what this did until
+2026-09-24): TAT columns like `Spare Group Assignment` and `Service
+Partner Assigned Date Stamp` get filled in days AFTER a ticket is
+created. Under the old merge, a partial/daily export only updated the
+ticket IDs it contained, so a ticket created Sep 3 whose spare was
+assigned Sep 20 kept its stale (blank) assignment date forever, and its
+TAT silently stayed wrong. Merging made the dataset a mix of snapshots
+taken at different times, which is unfixable from inside the pipeline.
+
+Replace makes the dashboards a pure function of one file: whatever you
+last uploaded is exactly what they show. The tradeoff is that each upload
+must be a FULL export covering every ticket you want reported on -- a
+day-only export means the dashboards show that day only. That matches how
+the source Excel workbook is maintained ("replace the existing data with
+the newly prepared data").
 """
 
 import gzip
@@ -19,6 +36,22 @@ import preprocess_raw  # noqa: E402
 
 TICKET_ID_COLUMN = col.TICKET_ID
 MASTER_PREFIX = "master:tickets"
+
+# Every column here is looked up BY NAME, never by position, so adding,
+# removing or reordering other columns in the Freshdesk export can't
+# shift anything underneath us. These two are the only ones the pipeline
+# itself can't work without -- everything else is per-dashboard and each
+# dashboard script reports its own missing columns.
+REQUIRED_COLUMNS = [col.TICKET_ID, col.CREATED_TIME]
+
+
+def validate_columns(df):
+    missing = [c for c in REQUIRED_COLUMNS if c not in df.columns]
+    if missing:
+        raise RuntimeError(
+            f"Uploaded file is missing required column(s): {missing}. "
+            f"Columns found: {sorted(df.columns.tolist())}"
+        )
 
 
 def latest_raw_prefix():
@@ -49,24 +82,20 @@ def main():
     # distinction between "field says NA" and "field is genuinely blank"
     # before any of our own code ever sees it.
     new_df = pd.read_csv(io.StringIO(read_raw_upload(raw_prefix)), low_memory=False, keep_default_na=False)
+    validate_columns(new_df)
 
     print(f"Applying cleanup rules to {len(new_df)} rows")
     new_df = preprocess_raw.process(new_df)
 
-    master_text = kv_store.read_chunked(MASTER_PREFIX)
-    master_df = (
-        pd.read_csv(io.StringIO(master_text), low_memory=False, keep_default_na=False)
-        if master_text
-        else pd.DataFrame()
-    )
-    print(f"Existing master dataset: {len(master_df)} rows")
+    # Only de-duplicate WITHIN this file -- a single export can legitimately
+    # repeat a ticket id; the last occurrence is the freshest.
+    before = len(new_df)
+    new_df = new_df.drop_duplicates(subset=TICKET_ID_COLUMN, keep="last")
+    if len(new_df) != before:
+        print(f"Dropped {before - len(new_df)} duplicate {TICKET_ID_COLUMN} row(s) within the upload")
 
-    merged_df = pd.concat([master_df, new_df], ignore_index=True)
-    merged_df = merged_df.drop_duplicates(subset=TICKET_ID_COLUMN, keep="last")
-    print(f"Merged dataset: {len(merged_df)} rows (added/updated {len(new_df)} from {raw_prefix})")
-
-    kv_store.write_chunked(MASTER_PREFIX, merged_df.to_csv(index=False))
-    print(f"Wrote master dataset back to KV under '{MASTER_PREFIX}'")
+    kv_store.write_chunked(MASTER_PREFIX, new_df.to_csv(index=False))
+    print(f"Wrote {len(new_df)} rows to KV under '{MASTER_PREFIX}' (replaced previous dataset)")
 
 
 if __name__ == "__main__":

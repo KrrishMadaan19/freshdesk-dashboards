@@ -106,6 +106,19 @@ freshdesk-dashboards/
 - Validate every transform script's output against the real numbers in the
   source Excel dashboard for a known date range before wiring it into the
   live pipeline.
+- **The latest upload REPLACES the dataset — it is not merged** (changed
+  2026-09-24). `process_upload.py` writes the cleaned upload straight to
+  `master:tickets`, so every dashboard is a pure function of one file:
+  whatever was uploaded last. This means **each upload must be a FULL
+  export** covering every ticket you want reported on — upload a single
+  day's tickets and the dashboards show that single day. The previous
+  upsert-by-Ticket-ID merge was removed because TAT columns (`Spare Group
+  Assignment`, `Service Partner Assigned Date Stamp`, …) get populated days
+  after a ticket is created, so a partial export left older tickets frozen
+  at their stale values and their TAT silently wrong, with no way to detect
+  or repair it from inside the pipeline. See the docstring in
+  `process_upload.py` and the 2026-09-24 note in
+  `docs/excel_process_notes/01-creation-to-assignment.md`.
 - **Freshdesk column names are defined once, in `scripts/columns.py`** —
   every script that reads a raw/master column imports its name from there
   (`import columns as col`, then `col.PARTNER_NAME` etc.) instead of
