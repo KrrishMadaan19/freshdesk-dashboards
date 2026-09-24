@@ -118,11 +118,21 @@ totals. With an allow-list it shows up as absent instead.
 - **Weekly / Daily views** — driven by a single month picker, which replaces
   the sheet's two independently hand-typed `A1` month selectors (`WEEKLY!A1`
   and `DAILY TREND!A1` can silently disagree; one picker can't).
-- **Day-1 rule** — the dashboard reflects data up to *yesterday*. Rows whose
-  `Resolved time` falls on or after the processing date are excluded, so the
-  most recent day shown is always complete rather than a partial snapshot.
-  This is the automated equivalent of the business's "select day-1 date from
-  Resolved date" step.
+- **No day-1 cutoff** (decided 2026-09-24). An earlier build excluded rows
+  resolved on the current date, mirroring the business's "select day-1 date"
+  step. The user asked for every ticket in the upload to be counted instead,
+  so the cutoff was removed; the most recent day is therefore partial until
+  that day ends. The page states the latest resolved date it holds.
+- **Tickets with no `Resolved time` are excluded, and the count is shown on
+  the page.** Every view buckets by resolved month/week/day, so a ticket
+  without that date has nowhere to sit. In the 2026-09-24 upload this was
+  3,351 tickets — and they are overwhelmingly *not* cancellations: 3,317 are
+  still in progress (`Pending` 2,260, `Customer Responded` 822, `Open` 205,
+  `Reopened` 19, `SP Update` 11) and simply have not been resolved yet. Only
+  34 are `Closed`, of which 24 carry a cancellation type — those 24 are a
+  genuine Freshdesk data-quality gap (closed and cancelled, but the resolved
+  timestamp was never written). Surfacing the count keeps this visible
+  instead of silently dropping rows.
 
 ## Quirks & bugs in the source workbook
 
@@ -214,3 +224,32 @@ Note the workbook's data ends 22 Sep, so `Sep'26` is partial there and
 `WK 4` holds only day 22. A live export covering more of September will
 legitimately exceed these numbers — validate against `Aug'26`, which is
 complete in both.
+
+### Reconciling the website against the workbook
+
+The two will not agree exactly, for reasons that are fully accounted for:
+
+| | Rows |
+|---|---|
+| Workbook `RAW` sheet | 87,972 |
+| − duplicate re-resolution rows (September only) | −618 |
+| = unique tickets in the workbook | 87,354 |
+| Website, from the 2026-09-24 export | 87,252 |
+| Unexplained remainder | 102 (0.1%) |
+
+**The 618 duplicates matter most.** The workbook is appended to daily, so a
+ticket that is reopened and re-resolved gains a row each time — one ticket
+in this file appears 8 times, resolved on 5, 7, 8, 9, 10, 12, 16 and 19 Sep
+with the reason alternating. Jan–Aug were bulk historical loads and contain
+zero duplicates; only the month being actively appended to is affected.
+
+So **the workbook counts resolution events; the website counts tickets.** A
+Freshdesk export carries only each ticket's current state, so event history
+cannot be reconstructed from it — this is a limitation of the input, not a
+choice. Expect the website's figure for the in-progress month to read lower.
+
+The residual ~102 is snapshot drift: the workbook was saved 22 Sep, the
+export pulled 24 Sep, and tickets change in between. Re-exporting both on
+the same day removes it. Note `Jan'26`–`Apr'26` match the workbook
+*exactly* (13,554 / 8,607 / 8,088 / 9,132), which is what confirms the
+drift is age rather than logic.

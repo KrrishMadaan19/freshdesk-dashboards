@@ -204,8 +204,14 @@
           " are excluded from the Grand Total, reproducing the source workbook's formula."
         );
       }
-      if (data.cutoff) {
-        notes.push("Data through " + data.cutoff + " (day-1 — today's partial data is excluded).");
+      if (data.latestResolved) {
+        notes.push("Data through " + data.latestResolved + " (the most recent day may be partial).");
+      }
+      if (data.excludedNoDate) {
+        notes.push(
+          data.excludedNoDate.toLocaleString() +
+          " tickets are not shown because they have no resolved date — almost all are still open or pending."
+        );
       }
       footnoteEl.textContent = notes.join(" ");
     }

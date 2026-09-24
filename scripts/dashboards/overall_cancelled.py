@@ -12,7 +12,6 @@ import io
 import json
 import os
 import sys
-from datetime import date, timedelta
 
 import pandas as pd
 
@@ -152,20 +151,20 @@ def main():
 
     df = df.assign(_resolved=resolved, _category=category)
 
-    # Drop anything outside the allow-list, plus rows with no usable date.
-    before = len(df)
-    df = df[df["_category"].notna() & df["_resolved"].notna()]
-    print(f"Cancelled-type rows with a parseable Resolved time: {len(df)} of {before}")
+    # Drop anything outside the allow-list. Rows with no usable Resolved time
+    # are counted and surfaced on the page rather than vanishing silently --
+    # every view buckets by resolved month/week/day, so a ticket without that
+    # date genuinely has nowhere to sit in the grid.
+    in_scope = df[df["_category"].notna()]
+    excluded_no_date = int(in_scope["_resolved"].isna().sum())
+    df = in_scope[in_scope["_resolved"].notna()]
+    print(f"Cancelled-type rows: {len(in_scope)}  "
+          f"(with a Resolved time: {len(df)}, without: {excluded_no_date})")
 
-    # Day-1 rule: the dashboard reflects data up to yesterday, so the most
-    # recent day shown is always complete rather than a partial snapshot. This
-    # is the automated equivalent of the business's "select day-1 date from
-    # Resolved date" step.
-    cutoff = date.today() - timedelta(days=1)
-    before = len(df)
-    df = df[df["_resolved"].dt.date <= cutoff]
-    if len(df) != before:
-        print(f"Day-1 cutoff ({cutoff}): excluded {before - len(df)} row(s) resolved today or later")
+    # No day-1 cutoff: the dashboard shows every ticket in the upload,
+    # including ones resolved today (user's call, 2026-09-24 -- "use all the
+    # data"). The most recent day is therefore partial until that day ends.
+    latest = df["_resolved"].max()
 
     df = df.assign(
         _month=df["_resolved"].dt.strftime("%b'%y"),
@@ -189,7 +188,8 @@ def main():
         "weekly": weekly,
         "daily": daily,
         "excludedFromTotal": EXCLUDED_FROM_TOTAL,
-        "cutoff": cutoff.isoformat(),
+        "latestResolved": latest.date().isoformat() if pd.notna(latest) else None,
+        "excludedNoDate": excluded_no_date,
     }
 
     kv_store.write_chunked(PROCESSED_PREFIX, json.dumps(output))
