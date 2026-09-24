@@ -10,6 +10,7 @@ TICKET_ID = "Ticket ID"
 GROUP = "Group"
 PARTNER_NAME = "Partner Name"
 UTR = "UTR"
+RESOLUTION_TYPE = "Resolution Type"
 
 CREATED_TIME = "Created time"
 RESOLVED_TIME = "Resolved time"

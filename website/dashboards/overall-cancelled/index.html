@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Overall Cancelled — Freshdesk Analytics Dashboards</title>
+  <link rel="stylesheet" href="/style.css" />
+  <link rel="stylesheet" href="/dashboard-common.css" />
+</head>
+<body class="viz-root">
+  <nav class="top-links">
+    <a href="/">Home</a>
+    <a href="/upload/">Upload export</a>
+  </nav>
+  <header>
+    <h1>Overall Cancelled Tickets Report</h1>
+    <p>Cancelled, spam, auto-closed and forwarded tickets, broken down by reason.</p>
+  </header>
+  <main>
+    <div id="status" class="status-message">Loading…</div>
+  </main>
+
+  <script>
+    const statusEl = document.getElementById("status");
+
+    function showEmptyState(message) {
+      statusEl.innerHTML = "";
+      const line = document.createElement("p");
+      line.style.margin = "0 0 0.75rem";
+      line.textContent = message;
+      const hint = document.createElement("p");
+      hint.style.margin = "0";
+      hint.style.fontSize = "0.85rem";
+      const link = document.createElement("a");
+      link.href = "/upload/";
+      link.textContent = "Upload a Freshdesk export";
+      hint.appendChild(link);
+      hint.appendChild(document.createTextNode(" to populate this dashboard."));
+      statusEl.appendChild(line);
+      statusEl.appendChild(hint);
+    }
+
+    async function load() {
+      try {
+        const response = await fetch("/api/dashboards/overall-cancelled");
+        if (response.status === 404) {
+          showEmptyState("No data yet.");
+          return;
+        }
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          throw new Error(body.error || `Request failed (${response.status})`);
+        }
+        // The grid is not built yet -- the transform script and this page's
+        // rendering land together once the source workbook's formulas have
+        // been reverse-engineered.
+        showEmptyState("No data yet.");
+      } catch (err) {
+        statusEl.textContent = err.message || "Failed to load dashboard data.";
+      }
+    }
+
+    load();
+  </script>
+</body>
+</html>
