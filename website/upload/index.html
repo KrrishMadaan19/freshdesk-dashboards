@@ -39,7 +39,7 @@
     <div id="progress-track" class="progress-track" hidden>
       <div id="progress-fill" class="progress-fill"></div>
     </div>
-    <div id="status"></div>
+    <div id="status" class="upload-status"></div>
   </main>
 
   <script>
@@ -182,7 +182,7 @@
       const textEl = document.createElement("span");
       textEl.textContent = message;
       status.appendChild(textEl);
-      status.className = kind;
+      status.className = `upload-status ${kind}`;
     }
   </script>
 </body>

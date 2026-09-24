@@ -356,7 +356,11 @@ nav.top-links a:hover {
   animation: success-flash 0.6s ease;
 }
 
-#status {
+/* Scoped to a class, NOT #status -- the dashboard pages use that same id
+   for their own "Loading…" box, and an author-level `display` here
+   overrides the browser's `[hidden] { display: none }`, which silently
+   breaks `el.hidden = true` on those pages. */
+.upload-status {
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -392,24 +396,30 @@ nav.top-links a:hover {
   }
 }
 
-#status.ok {
+.upload-status.ok {
   color: #4fdb8f;
 }
 
-#status.ok .status-icon {
+.upload-status.ok .status-icon {
   background: rgba(79, 219, 143, 0.15);
   color: #4fdb8f;
 }
 
-#status.error {
+.upload-status.error {
   color: #ff6b6b;
 }
 
-#status.error .status-icon {
+.upload-status.error .status-icon {
   background: rgba(255, 107, 107, 0.15);
   color: #ff6b6b;
 }
 
-#status.busy {
+.upload-status.busy {
   color: var(--muted);
+}
+
+/* Belt and braces: keep `el.hidden = true` working even if some future
+   rule sets an explicit `display` on the same element. */
+[hidden] {
+  display: none !important;
 }
