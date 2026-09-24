@@ -8,10 +8,19 @@ key recording the chunk count.
 
 import json
 import os
+import time
 
 import requests
 
-CHUNK_LIMIT_BYTES = 20 * 1024 * 1024  # stay safely under KV's 25MB per-value cap
+# Cloudflare's KV REST API intermittently returns 504 on multi-MB values --
+# observed repeatedly on both reads and writes of the master dataset, at
+# 20MB chunks. Smaller chunks are individually far more reliable; the extra
+# requests are cheap next to a failed pipeline run.
+CHUNK_LIMIT_BYTES = 8 * 1024 * 1024  # well under KV's 25MB per-value cap
+
+MAX_ATTEMPTS = 5
+RETRY_STATUSES = {429, 500, 502, 503, 504}
+REQUEST_TIMEOUT_SECONDS = 180
 
 ACCOUNT_ID = os.environ["CLOUDFLARE_ACCOUNT_ID"]
 API_TOKEN = os.environ["CLOUDFLARE_API_TOKEN"]
@@ -23,6 +32,31 @@ BASE_URL = (
 HEADERS = {"Authorization": f"Bearer {API_TOKEN}"}
 
 
+def _request(method, url, **kwargs):
+    """Every KV call goes through here so a transient gateway error can't
+    fail an unattended pipeline run. Retries 429/5xx and connection errors
+    with exponential backoff; anything else (including 404) is returned to
+    the caller untouched."""
+    last_error = None
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            response = requests.request(method, url, timeout=REQUEST_TIMEOUT_SECONDS, **kwargs)
+        except requests.RequestException as exc:
+            last_error = exc
+        else:
+            if response.status_code not in RETRY_STATUSES:
+                return response
+            last_error = requests.HTTPError(
+                f"{response.status_code} from KV API", response=response
+            )
+        if attempt < MAX_ATTEMPTS:
+            delay = 2**attempt
+            print(f"KV {method} {url.rsplit('/', 1)[-1]} failed ({last_error}); "
+                  f"retry {attempt}/{MAX_ATTEMPTS - 1} in {delay}s")
+            time.sleep(delay)
+    raise last_error
+
+
 def list_keys(prefix):
     keys = []
     cursor = None
@@ -30,7 +64,7 @@ def list_keys(prefix):
         params = {"prefix": prefix}
         if cursor:
             params["cursor"] = cursor
-        response = requests.get(f"{BASE_URL}/keys", headers=HEADERS, params=params)
+        response = _request("GET", f"{BASE_URL}/keys", headers=HEADERS, params=params)
         response.raise_for_status()
         payload = response.json()
         keys.extend(k["name"] for k in payload["result"])
@@ -41,7 +75,7 @@ def list_keys(prefix):
 
 
 def get(key):
-    response = requests.get(f"{BASE_URL}/values/{key}", headers=HEADERS)
+    response = _request("GET", f"{BASE_URL}/values/{key}", headers=HEADERS)
     if response.status_code == 404:
         return None
     response.raise_for_status()
@@ -49,7 +83,7 @@ def get(key):
 
 
 def get_bytes(key):
-    response = requests.get(f"{BASE_URL}/values/{key}", headers=HEADERS)
+    response = _request("GET", f"{BASE_URL}/values/{key}", headers=HEADERS)
     if response.status_code == 404:
         return None
     response.raise_for_status()
@@ -57,17 +91,17 @@ def get_bytes(key):
 
 
 def put(key, value):
-    response = requests.put(f"{BASE_URL}/values/{key}", headers=HEADERS, data=value.encode("utf-8"))
+    response = _request("PUT", f"{BASE_URL}/values/{key}", headers=HEADERS, data=value.encode("utf-8"))
     response.raise_for_status()
 
 
 def put_bytes(key, data):
-    response = requests.put(f"{BASE_URL}/values/{key}", headers=HEADERS, data=data)
+    response = _request("PUT", f"{BASE_URL}/values/{key}", headers=HEADERS, data=data)
     response.raise_for_status()
 
 
 def delete(key):
-    response = requests.delete(f"{BASE_URL}/values/{key}", headers=HEADERS)
+    response = _request("DELETE", f"{BASE_URL}/values/{key}", headers=HEADERS)
     response.raise_for_status()
 
 
