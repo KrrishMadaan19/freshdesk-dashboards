@@ -16,9 +16,26 @@
   </header>
   <main>
     <div class="dropzone" id="dropzone">
-      <p id="dropzone-label">Drag a CSV file here, or click to choose one</p>
+      <svg class="dropzone-icon" id="dropzone-icon" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M7 18a4.5 4.5 0 0 1-1.5-8.74A5.5 5.5 0 0 1 16.2 7.3 4 4 0 0 1 17.5 15H17" />
+        <path d="M12 12v9" />
+        <path d="m9 15 3-3 3 3" />
+      </svg>
+      <p id="dropzone-label">Drag a CSV file here</p>
+      <p class="dropzone-or">or</p>
+      <button type="button" class="choose-btn" id="choose-btn">Choose file</button>
       <input type="file" id="file-input" accept=".csv,text/csv" />
     </div>
+
+    <div id="file-chip" class="file-chip" hidden>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+        <path d="M14 2v6h6" />
+      </svg>
+      <span id="file-chip-name"></span>
+      <span id="file-chip-size" class="file-chip-size"></span>
+    </div>
+
     <div id="progress-track" class="progress-track" hidden>
       <div id="progress-fill" class="progress-fill"></div>
     </div>
@@ -29,24 +46,36 @@
     const MAX_COMPRESSED_BYTES = 90 * 1024 * 1024; // stay under Cloudflare's ~100MB edge request limit
 
     const dropzone = document.getElementById("dropzone");
+    const dropzoneIcon = document.getElementById("dropzone-icon");
+    const chooseBtn = document.getElementById("choose-btn");
     const fileInput = document.getElementById("file-input");
+    const fileChip = document.getElementById("file-chip");
+    const fileChipName = document.getElementById("file-chip-name");
+    const fileChipSize = document.getElementById("file-chip-size");
     const status = document.getElementById("status");
     const progressTrack = document.getElementById("progress-track");
     const progressFill = document.getElementById("progress-fill");
 
+    chooseBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      fileInput.click();
+    });
     dropzone.addEventListener("click", () => fileInput.click());
 
-    dropzone.addEventListener("dragover", (e) => {
+    let dragDepth = 0;
+    dropzone.addEventListener("dragenter", (e) => {
       e.preventDefault();
+      dragDepth++;
       dropzone.classList.add("dragover");
     });
-
+    dropzone.addEventListener("dragover", (e) => e.preventDefault());
     dropzone.addEventListener("dragleave", () => {
-      dropzone.classList.remove("dragover");
+      dragDepth = Math.max(0, dragDepth - 1);
+      if (dragDepth === 0) dropzone.classList.remove("dragover");
     });
-
     dropzone.addEventListener("drop", (e) => {
       e.preventDefault();
+      dragDepth = 0;
       dropzone.classList.remove("dragover");
       const file = e.dataTransfer.files[0];
       if (file) uploadFile(file);
@@ -56,6 +85,12 @@
       const file = fileInput.files[0];
       if (file) uploadFile(file);
     });
+
+    function formatSize(bytes) {
+      if (bytes < 1024) return `${bytes} B`;
+      if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+      return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    }
 
     async function gzip(file) {
       const compressedStream = file.stream().pipeThrough(new CompressionStream("gzip"));
@@ -72,7 +107,7 @@
           if (!e.lengthComputable) return;
           const pct = Math.round((e.loaded / e.total) * 100);
           progressFill.style.width = `${pct}%`;
-          setStatus(`Uploading… ${pct}%`, "");
+          setStatus(`Uploading… ${pct}%`, "busy");
         });
 
         xhr.addEventListener("load", () => {
@@ -99,8 +134,14 @@
         return;
       }
 
+      fileChip.hidden = false;
+      fileChipName.textContent = file.name;
+      fileChipSize.textContent = formatSize(file.size);
+      dropzone.classList.add("has-file");
+      dropzoneIcon.classList.add("spin-once");
+
       try {
-        setStatus(`Compressing ${file.name}…`, "");
+        setStatus(`Compressing ${file.name}…`, "busy");
         progressTrack.hidden = false;
         progressFill.style.width = "0%";
 
@@ -115,6 +156,8 @@
 
         const result = await uploadWithProgress(compressed);
         setStatus(`Uploaded as ${result.key}. Processing has been triggered.`, "ok");
+        dropzone.classList.add("success-pulse");
+        setTimeout(() => dropzone.classList.remove("success-pulse"), 600);
       } catch (err) {
         setStatus(err.message || "Upload failed.", "error");
       } finally {
@@ -123,7 +166,22 @@
     }
 
     function setStatus(message, kind) {
-      status.textContent = message;
+      const icons = { ok: "✓", error: "✕", busy: "" };
+      const icon = icons[kind] || "";
+      status.innerHTML = "";
+      if (icon) {
+        const iconEl = document.createElement("span");
+        iconEl.className = "status-icon";
+        iconEl.textContent = icon;
+        status.appendChild(iconEl);
+      } else if (kind === "busy") {
+        const spinner = document.createElement("span");
+        spinner.className = "status-spinner";
+        status.appendChild(spinner);
+      }
+      const textEl = document.createElement("span");
+      textEl.textContent = message;
+      status.appendChild(textEl);
       status.className = kind;
     }
   </script>
