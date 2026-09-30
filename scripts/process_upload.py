@@ -62,26 +62,82 @@ def latest_raw_prefix():
     return latest[: -len(":manifest")]
 
 
+# Excel files are ZIP (xlsx/xlsb) or OLE2 (xls) containers. Sniffing the bytes
+# is more trustworthy than the extension the browser reported, but it can't
+# separate xlsx from xlsb -- both are ZIPs -- so the declared format breaks
+# that tie.
+ZIP_MAGIC = b"PK\x03\x04"
+OLE2_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
+
+EXCEL_ENGINES = {"xlsx": "openpyxl", "xlsb": "pyxlsb", "xls": "xlrd"}
+
+
 def read_raw_upload(prefix):
-    """The upload Function writes the raw export as gzip-compressed,
-    byte-aligned chunks (decompressing megabytes of CSV on a Worker's
-    per-request CPU budget isn't safe), so unpack that here instead."""
+    """Returns (bytes, declared_format). The upload Function writes the export
+    as gzip-compressed, byte-aligned chunks (decompressing megabytes on a
+    Worker's per-request CPU budget isn't safe), so unpack that here."""
     manifest = json.loads(kv_store.get(f"{prefix}:manifest"))
     raw_bytes = kv_store.read_chunked_bytes(prefix)
     if manifest.get("encoding") == "gzip":
-        return gzip.decompress(raw_bytes).decode("utf-8")
-    return raw_bytes.decode("utf-8")
+        raw_bytes = gzip.decompress(raw_bytes)
+    # Uploads predating multi-format support carry no "format" key.
+    return raw_bytes, (manifest.get("format") or "csv").lower()
+
+
+def parse_upload(raw_bytes, declared_format):
+    """CSV or Excel -> DataFrame.
+
+    keep_default_na=False on the CSV path: pandas otherwise silently reads
+    literal "NA" text (a real, meaningful placeholder in some Freshdesk
+    columns, e.g. "Purchased On") as a missing value, destroying the
+    distinction between "field says NA" and "field is genuinely blank" before
+    any of our own code sees it. The Excel readers don't take that argument,
+    so blanks are normalised back to "" afterwards to keep both paths
+    producing the same thing.
+    """
+    looks_like_excel = raw_bytes.startswith(ZIP_MAGIC) or raw_bytes.startswith(OLE2_MAGIC)
+
+    if not looks_like_excel:
+        if declared_format != "csv":
+            print(f"WARNING: upload declared '{declared_format}' but the bytes aren't "
+                  f"an Excel container -- reading as CSV")
+        return pd.read_csv(
+            io.StringIO(raw_bytes.decode("utf-8-sig")), low_memory=False, keep_default_na=False
+        )
+
+    if raw_bytes.startswith(OLE2_MAGIC):
+        engine_format = "xls"
+    else:
+        # ZIP container: xlsx unless the upload said xlsb.
+        engine_format = "xlsb" if declared_format == "xlsb" else "xlsx"
+
+    engine = EXCEL_ENGINES[engine_format]
+    print(f"Reading upload as Excel ({engine_format}, engine={engine}) -- "
+          f"this is much slower than CSV on a large export")
+    try:
+        # keep_default_na=False for the same reason as the CSV path -- without
+        # it the Excel readers turn literal "NA" text into a missing value.
+        # Verified: "Purchased On" came back as "" instead of "NA" until this
+        # was passed.
+        df = pd.read_excel(
+            io.BytesIO(raw_bytes), engine=engine, dtype=object, keep_default_na=False
+        )
+    except ImportError as exc:
+        raise RuntimeError(
+            f"Reading .{engine_format} needs the '{engine}' package. "
+            f"Add it to scripts/requirements.txt."
+        ) from exc
+
+    # Match the CSV path: genuinely-blank cells become "", not NaN, so
+    # downstream is_blank()/notna() checks behave identically either way.
+    return df.where(df.notna(), "")
 
 
 def main():
     raw_prefix = latest_raw_prefix()
     print(f"Reading raw upload: {raw_prefix}")
-    # keep_default_na=False: pandas otherwise silently reads literal "NA"
-    # text (a real, meaningful placeholder value in some Freshdesk
-    # columns, e.g. "Purchased On") as a missing value -- destroying the
-    # distinction between "field says NA" and "field is genuinely blank"
-    # before any of our own code ever sees it.
-    new_df = pd.read_csv(io.StringIO(read_raw_upload(raw_prefix)), low_memory=False, keep_default_na=False)
+    raw_bytes, declared_format = read_raw_upload(raw_prefix)
+    new_df = parse_upload(raw_bytes, declared_format)
     validate_columns(new_df)
 
     print(f"Applying cleanup rules to {len(new_df)} rows")

@@ -6,7 +6,13 @@
 // multi-hundred-MB export.
 const CHUNK_LIMIT_BYTES = 20 * 1024 * 1024;
 
-async function writeChunkedBytes(kv, prefix, arrayBuffer) {
+// Uploads may be CSV or Excel. The processing script sniffs the decompressed
+// bytes to decide how to parse, but the extension still travels with the file
+// because .xlsx and .xlsb are both ZIP containers and can't be told apart by
+// magic number alone.
+const ALLOWED_FORMATS = ["csv", "xlsx", "xls", "xlsb"];
+
+async function writeChunkedBytes(kv, prefix, arrayBuffer, format) {
   const bytes = new Uint8Array(arrayBuffer);
   const chunks = [];
   for (let offset = 0; offset < bytes.length; offset += CHUNK_LIMIT_BYTES) {
@@ -15,7 +21,10 @@ async function writeChunkedBytes(kv, prefix, arrayBuffer) {
   if (chunks.length === 0) chunks.push(new Uint8Array(0));
 
   await Promise.all(chunks.map((chunk, i) => kv.put(`${prefix}:chunk:${i}`, chunk)));
-  await kv.put(`${prefix}:manifest`, JSON.stringify({ chunks: chunks.length, encoding: "gzip" }));
+  await kv.put(
+    `${prefix}:manifest`,
+    JSON.stringify({ chunks: chunks.length, encoding: "gzip", format })
+  );
 }
 
 function json(body, status = 200) {
@@ -30,10 +39,15 @@ export async function onRequestPost({ request, env }) {
     return json({ error: "No request body." }, 400);
   }
 
+  const format = (request.headers.get("X-File-Format") || "csv").toLowerCase();
+  if (!ALLOWED_FORMATS.includes(format)) {
+    return json({ error: `Unsupported file format: ${format}` }, 400);
+  }
+
   const date = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
   const prefix = `raw:${date}`;
 
-  await writeChunkedBytes(env.TICKETS_KV, prefix, await request.arrayBuffer());
+  await writeChunkedBytes(env.TICKETS_KV, prefix, await request.arrayBuffer(), format);
 
   const dispatchResponse = await fetch(
     `https://api.github.com/repos/${env.GITHUB_REPO}/dispatches`,

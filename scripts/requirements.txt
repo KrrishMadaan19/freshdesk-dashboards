@@ -1,2 +1,7 @@
 pandas
 requests
+
+# Excel upload support -- one reader per format pandas can't handle alone.
+openpyxl
+xlrd
+pyxlsb
