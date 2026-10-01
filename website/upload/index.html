@@ -45,7 +45,8 @@
   </main>
 
   <script>
-    const MAX_UPLOAD_BYTES = 90 * 1024 * 1024; // stay under Cloudflare's ~100MB edge request limit
+    // No size limit: the file goes up in chunks, so Cloudflare's ~100MB
+    // per-request cap applies to each part rather than the whole export.
 
     const dropzone = document.getElementById("dropzone");
     const dropzoneIcon = document.getElementById("dropzone-icon");
@@ -113,18 +114,22 @@
       return dot === -1 ? "" : name.slice(dot + 1);
     }
 
-    function uploadWithProgress(blob, format) {
+    // One KV value per request. Keeps every request far below Cloudflare's
+    // ~100MB body cap, so file size stops being a limit at all.
+    const CHUNK_BYTES = 20 * 1024 * 1024;
+
+    function postChunk(chunk, format, uploadId, index, total, onProgress) {
       return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open("POST", "/api/upload");
-        xhr.setRequestHeader("Content-Type", "application/gzip");
+        xhr.setRequestHeader("Content-Type", "application/octet-stream");
         xhr.setRequestHeader("X-File-Format", format);
+        xhr.setRequestHeader("X-Upload-Id", uploadId);
+        xhr.setRequestHeader("X-Chunk-Index", String(index));
+        xhr.setRequestHeader("X-Chunk-Total", String(total));
 
         xhr.upload.addEventListener("progress", (e) => {
-          if (!e.lengthComputable) return;
-          const pct = Math.round((e.loaded / e.total) * 100);
-          progressFill.style.width = `${pct}%`;
-          setStatus(`Uploading… ${pct}%`, "busy");
+          if (e.lengthComputable) onProgress(e.loaded);
         });
 
         xhr.addEventListener("load", () => {
@@ -140,9 +145,32 @@
         });
 
         xhr.addEventListener("error", () => reject(new Error("Network error during upload.")));
-
-        xhr.send(blob);
+        xhr.send(chunk);
       });
+    }
+
+    async function uploadWithProgress(blob, format) {
+      const total = Math.max(1, Math.ceil(blob.size / CHUNK_BYTES));
+      const uploadId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      let completedBytes = 0;
+      let result = null;
+
+      for (let i = 0; i < total; i++) {
+        const chunk = blob.slice(i * CHUNK_BYTES, (i + 1) * CHUNK_BYTES);
+        const base = completedBytes;
+        result = await postChunk(chunk, format, uploadId, i, total, (sent) => {
+          const pct = Math.min(100, Math.round(((base + sent) / blob.size) * 100));
+          progressFill.style.width = `${pct}%`;
+          setStatus(
+            total > 1
+              ? `Uploading… ${pct}% (part ${i + 1} of ${total})`
+              : `Uploading… ${pct}%`,
+            "busy"
+          );
+        });
+        completedBytes += chunk.size;
+      }
+      return result;
     }
 
     async function uploadFile(file) {
@@ -165,19 +193,6 @@
         progressFill.style.width = "0%";
 
         const payload = await maybeGzip(file, format);
-
-        if (payload.size > MAX_UPLOAD_BYTES) {
-          const mb = (payload.size / 1e6).toFixed(0);
-          throw new Error(
-            ALREADY_COMPRESSED.includes(format)
-              ? `This file is ${mb}MB — too large for a single upload. Export the same data ` +
-                `as CSV instead: it compresses to roughly a tenth of the size and processes ` +
-                `far faster than Excel.`
-              : `Even compressed, this file is ${mb}MB — too large for a single upload. ` +
-                `Try exporting a shorter date range.`
-          );
-        }
-
         const result = await uploadWithProgress(payload, format);
         setStatus(`Uploaded as ${result.key}. Processing has been triggered.`, "ok");
         dropzone.classList.add("success-pulse");

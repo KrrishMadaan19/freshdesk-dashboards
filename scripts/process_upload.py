@@ -78,7 +78,21 @@ def read_raw_upload(prefix):
     as gzip-compressed, byte-aligned chunks (decompressing megabytes on a
     Worker's per-request CPU budget isn't safe), so unpack that here."""
     manifest = json.loads(kv_store.get(f"{prefix}:manifest"))
-    raw_bytes = kv_store.read_chunked_bytes(prefix)
+
+    # Chunks live under the upload's own id so a half-finished upload can't be
+    # mistaken for a complete one (see the comment in upload.js). Uploads from
+    # before chunked upload existed have no uploadId and sit directly under the
+    # date prefix.
+    upload_id = manifest.get("uploadId")
+    chunk_prefix = f"{prefix}:{upload_id}" if upload_id else prefix
+    parts = [kv_store.get_bytes(f"{chunk_prefix}:chunk:{i}") for i in range(manifest["chunks"])]
+    missing = [i for i, p in enumerate(parts) if p is None]
+    if missing:
+        raise RuntimeError(
+            f"Upload {prefix} is incomplete -- chunk(s) {missing} missing. "
+            f"Re-upload the file."
+        )
+    raw_bytes = b"".join(parts)
     # Sniff the gzip magic number rather than trusting the manifest: xlsx/xlsb
     # are uploaded uncompressed (they're already ZIPs), and older uploads
     # predate the encoding field being meaningful.
