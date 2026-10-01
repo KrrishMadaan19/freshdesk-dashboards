@@ -12,7 +12,9 @@
   </nav>
   <header>
     <h1>Upload Freshdesk Export</h1>
-    <p>Drop today's ticket export CSV to kick off processing.</p>
+    <p>Drop today's ticket export to kick off processing. CSV is best for full
+       exports — Excel files hold the same data at several times the size and
+       take far longer to process.</p>
   </header>
   <main>
     <div class="dropzone" id="dropzone">
@@ -43,7 +45,7 @@
   </main>
 
   <script>
-    const MAX_COMPRESSED_BYTES = 90 * 1024 * 1024; // stay under Cloudflare's ~100MB edge request limit
+    const MAX_UPLOAD_BYTES = 90 * 1024 * 1024; // stay under Cloudflare's ~100MB edge request limit
 
     const dropzone = document.getElementById("dropzone");
     const dropzoneIcon = document.getElementById("dropzone-icon");
@@ -92,7 +94,13 @@
       return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
     }
 
-    async function gzip(file) {
+    // .xlsx and .xlsb are ZIP containers -- they're already compressed, so
+    // gzipping them ADDS a little overhead instead of saving anything. (A
+    // 120MB xlsx came out at 125MB and failed the size check for no reason.)
+    const ALREADY_COMPRESSED = ["xlsx", "xlsb"];
+
+    async function maybeGzip(file, format) {
+      if (ALREADY_COMPRESSED.includes(format)) return file;
       const compressedStream = file.stream().pipeThrough(new CompressionStream("gzip"));
       return new Response(compressedStream).blob();
     }
@@ -151,20 +159,26 @@
       dropzoneIcon.classList.add("spin-once");
 
       try {
-        setStatus(`Compressing ${file.name}…`, "busy");
+        const willCompress = !ALREADY_COMPRESSED.includes(format);
+        setStatus(willCompress ? `Compressing ${file.name}…` : `Preparing ${file.name}…`, "busy");
         progressTrack.hidden = false;
         progressFill.style.width = "0%";
 
-        const compressed = await gzip(file);
+        const payload = await maybeGzip(file, format);
 
-        if (compressed.size > MAX_COMPRESSED_BYTES) {
+        if (payload.size > MAX_UPLOAD_BYTES) {
+          const mb = (payload.size / 1e6).toFixed(0);
           throw new Error(
-            `Even compressed, this file is ${(compressed.size / 1e6).toFixed(0)}MB — too large ` +
-            `for a single upload. Try exporting a shorter date range.`
+            ALREADY_COMPRESSED.includes(format)
+              ? `This file is ${mb}MB — too large for a single upload. Export the same data ` +
+                `as CSV instead: it compresses to roughly a tenth of the size and processes ` +
+                `far faster than Excel.`
+              : `Even compressed, this file is ${mb}MB — too large for a single upload. ` +
+                `Try exporting a shorter date range.`
           );
         }
 
-        const result = await uploadWithProgress(compressed, format);
+        const result = await uploadWithProgress(payload, format);
         setStatus(`Uploaded as ${result.key}. Processing has been triggered.`, "ok");
         dropzone.classList.add("success-pulse");
         setTimeout(() => dropzone.classList.remove("success-pulse"), 600);

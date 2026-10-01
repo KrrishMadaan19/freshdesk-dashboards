@@ -12,6 +12,11 @@ const CHUNK_LIMIT_BYTES = 20 * 1024 * 1024;
 // magic number alone.
 const ALLOWED_FORMATS = ["csv", "xlsx", "xls", "xlsb"];
 
+// xlsx and xlsb are ZIP containers, so the upload page sends them as-is rather
+// than gzipping them pointlessly. The manifest records which happened, and the
+// processing script also sniffs the gzip magic number rather than trusting it.
+const ALREADY_COMPRESSED = ["xlsx", "xlsb"];
+
 async function writeChunkedBytes(kv, prefix, arrayBuffer, format) {
   const bytes = new Uint8Array(arrayBuffer);
   const chunks = [];
@@ -23,7 +28,11 @@ async function writeChunkedBytes(kv, prefix, arrayBuffer, format) {
   await Promise.all(chunks.map((chunk, i) => kv.put(`${prefix}:chunk:${i}`, chunk)));
   await kv.put(
     `${prefix}:manifest`,
-    JSON.stringify({ chunks: chunks.length, encoding: "gzip", format })
+    JSON.stringify({
+      chunks: chunks.length,
+      encoding: ALREADY_COMPRESSED.includes(format) ? "none" : "gzip",
+      format,
+    })
   );
 }
 

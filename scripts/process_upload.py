@@ -68,6 +68,7 @@ def latest_raw_prefix():
 # that tie.
 ZIP_MAGIC = b"PK\x03\x04"
 OLE2_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
+GZIP_MAGIC = b"\x1f\x8b"
 
 EXCEL_ENGINES = {"xlsx": "openpyxl", "xlsb": "pyxlsb", "xls": "xlrd"}
 
@@ -78,7 +79,10 @@ def read_raw_upload(prefix):
     Worker's per-request CPU budget isn't safe), so unpack that here."""
     manifest = json.loads(kv_store.get(f"{prefix}:manifest"))
     raw_bytes = kv_store.read_chunked_bytes(prefix)
-    if manifest.get("encoding") == "gzip":
+    # Sniff the gzip magic number rather than trusting the manifest: xlsx/xlsb
+    # are uploaded uncompressed (they're already ZIPs), and older uploads
+    # predate the encoding field being meaningful.
+    if raw_bytes.startswith(GZIP_MAGIC):
         raw_bytes = gzip.decompress(raw_bytes)
     # Uploads predating multi-format support carry no "format" key.
     return raw_bytes, (manifest.get("format") or "csv").lower()
