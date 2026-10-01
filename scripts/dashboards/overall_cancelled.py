@@ -8,8 +8,6 @@ Everything here keys off `Resolved time` -- `Created time` is never used by
 this dashboard (unlike Dashboard 1).
 """
 
-import io
-import json
 import os
 import sys
 
@@ -17,10 +15,10 @@ import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import columns as col  # noqa: E402
+import dashboard_lib as lib  # noqa: E402
 import date_utils  # noqa: E402
-import kv_store  # noqa: E402
 
-MASTER_PREFIX = "master:tickets"
+MASTER_PREFIX = lib.MASTER_PREFIX
 PROCESSED_PREFIX = "processed:overall-cancelled"
 
 RESOLVED_COL = col.RESOLVED_TIME
@@ -83,38 +81,18 @@ ROWS = [
 # ("exclude these two named categories") and so carries forward cleanly.
 EXCLUDED_FROM_TOTAL = ["FD automation issue", "Test"]
 
-WEEKS = ["WK 1", "WK 2", "WK 3", "WK 4", "WK 5"]
-DAYS = [f"{d}{'th' if d in (11, 12, 13) else {1: 'st', 2: 'nd', 3: 'rd'}.get(d % 10, 'th')}"
-        for d in range(1, 32)]
+WEEKS = lib.WEEKS
+DAYS = lib.DAY_ORDINALS
 
-
-def week_bucket(day_of_month):
-    """Same day-of-month bucketing as Dashboard 1 -- the source workbooks use
-    the identical WEEKNUM(DAY(...)) trick, verified empirically here across
-    all 87,972 rows of the cancelled workbook with zero exceptions."""
-    if day_of_month <= 7:
-        return "WK 1"
-    if day_of_month <= 14:
-        return "WK 2"
-    if day_of_month <= 21:
-        return "WK 3"
-    if day_of_month <= 28:
-        return "WK 4"
-    return "WK 5"
-
-
-def month_sort_key(month_label):
-    from datetime import datetime
-    return datetime.strptime(month_label, "%b'%y")
+# Re-exported so validation scripts and anything else importing this module
+# keep working against one definition.
+week_bucket = lib.week_bucket
+month_sort_key = lib.month_sort_key
 
 
 def counts_for(df, column, labels):
     """Count rows per category for each label, as one grid."""
-    grid = {}
-    for row_label in ROWS:
-        row_df = df[df["_category"] == row_label]
-        per_label = row_df[column].value_counts()
-        grid[row_label] = {label: int(per_label.get(label, 0)) for label in labels}
+    grid = {row: lib.count_by(df[df["_category"] == row], column, labels) for row in ROWS}
 
     # Grand Total row, reproducing the workbook's short SUM range.
     grid["Grand Total"] = {
@@ -125,29 +103,17 @@ def counts_for(df, column, labels):
 
 
 def main():
-    master_text = kv_store.read_chunked(MASTER_PREFIX)
-    if master_text is None:
-        raise RuntimeError("No master dataset found in KV -- run process_upload.py first")
-
-    df = pd.read_csv(io.StringIO(master_text), low_memory=False, keep_default_na=False)
-
-    for required in (RESOLVED_COL, RESOLUTION_TYPE_COL):
-        if required not in df.columns:
-            raise RuntimeError(
-                f"Master dataset is missing required column '{required}'. "
-                f"Columns found: {sorted(df.columns.tolist())}"
-            )
+    df = lib.load_master()
 
     # Resolved time is cleaned by preprocess_raw.py into ISO date-only text
     # before it reaches the master dataset, so no dayfirst juggling here.
-    resolved = date_utils.parse_native_timestamp(df[RESOLVED_COL])
+    resolved = date_utils.parse_native_timestamp(lib.required_column(df, RESOLVED_COL))
 
     # Blank Resolution Type becomes its own category, mirroring the workbook's
-    # `resolution type2` helper. Matching is case-insensitive because COUNTIFS
-    # is, and the sheet's own labels disagree in case with the helper's output.
-    raw_type = df[RESOLUTION_TYPE_COL].fillna("").astype(str).str.strip()
-    allowed = {t.casefold(): t for t in CANCELLED_TYPES}
-    category = raw_type.map(lambda v: NOT_SELECTED if v == "" else allowed.get(v.casefold()))
+    # `resolution type2` helper.
+    category = lib.required_column(df, RESOLUTION_TYPE_COL).map(
+        lib.category_matcher(CANCELLED_TYPES, blank_label=NOT_SELECTED)
+    )
 
     df = df.assign(_resolved=resolved, _category=category)
 
@@ -167,12 +133,12 @@ def main():
     latest = df["_resolved"].max()
 
     df = df.assign(
-        _month=df["_resolved"].dt.strftime("%b'%y"),
-        _week=df["_resolved"].dt.day.map(week_bucket),
-        _day=df["_resolved"].dt.day.map(lambda d: DAYS[d - 1]),
+        _month=lib.month_label(df["_resolved"]),
+        _week=df["_resolved"].dt.day.map(lib.week_bucket),
+        _day=df["_resolved"].dt.day.map(lib.day_ordinal),
     )
 
-    months = sorted(df["_month"].unique(), key=month_sort_key)
+    months = lib.sorted_months(df["_month"])
     print(f"Months found: {months}")
 
     overall = counts_for(df, "_month", months)
@@ -192,8 +158,8 @@ def main():
         "excludedNoDate": excluded_no_date,
     }
 
-    kv_store.write_chunked(PROCESSED_PREFIX, json.dumps(output))
-    print(f"Wrote {len(months)} months to KV under '{PROCESSED_PREFIX}'")
+    lib.write_processed(PROCESSED_PREFIX, output)
+    print(f"({len(months)} months)")
 
 
 if __name__ == "__main__":

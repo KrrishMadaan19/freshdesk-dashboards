@@ -5,21 +5,18 @@ against the merged master dataset, and writes the monthly + weekly count and
 percentage grids to KV as processed/creation-to-assignment JSON.
 """
 
-import io
-import json
 import os
 import sys
-from datetime import datetime
 
 import numpy as np
 import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import columns as col  # noqa: E402
+import dashboard_lib as lib  # noqa: E402
 import date_utils  # noqa: E402
-import kv_store  # noqa: E402
 
-MASTER_PREFIX = "master:tickets"
+MASTER_PREFIX = lib.MASTER_PREFIX
 PROCESSED_PREFIX = "processed:creation-to-assignment"
 
 # Local aliases into the shared column-name module (see columns.py).
@@ -31,8 +28,8 @@ REFUND_COL = col.REFUND_GROUP_ASSIGNMENT
 REPLACEMENT_COL = col.REPLACEMENT_GROUP_ASSIGNMENT
 SP_COL = col.SERVICE_PARTNER_ASSIGNED_DATE_STAMP
 
-BUCKETS = ["0", "1", "2", "3", "4-5", "6-7", "7+"]
-WEEKS = ["WK 1", "WK 2", "WK 3", "WK 4", "WK 5"]
+BUCKETS = lib.TAT_BUCKETS
+WEEKS = lib.WEEKS
 
 # (display row label, bucket column, partner filter or None)
 ROWS = [
@@ -45,87 +42,14 @@ ROWS = [
 ]
 
 
-def required_column(df, name):
-    """Every column is addressed BY NAME, never by position -- the export's
-    column order and column count both change over time. Missing a column
-    the whole report is keyed on is unrecoverable, so say so loudly rather
-    than producing a plausible-looking but wrong grid."""
-    if name not in df.columns:
-        raise RuntimeError(
-            f"Uploaded data is missing required column '{name}'. "
-            f"Columns found: {sorted(df.columns.tolist())}"
-        )
-    return df[name]
-
-
-def optional_date_column(df, name):
-    """A per-TAT date column that simply isn't in this export. Its row ends
-    up empty (every ageing value NaT -> no bucket) instead of crashing the
-    other five rows, which are still perfectly computable."""
-    if name not in df.columns:
-        print(f"WARNING: column '{name}' not present -- its TAT row will be empty")
-        return pd.Series(pd.NaT, index=df.index)
-    return df[name]
-
-
-def ageing_days(end_series, start_series):
-    # Both args must already be parsed datetime Series -- main() picks
-    # the right date_utils parser per column before calling this, since
-    # some columns are pre-cleaned (ISO) and some still aren't (see the
-    # column comments in main()).
-    days = (end_series - start_series).dt.days
-    return days.where(end_series.notna() & start_series.notna())
-
-
-def bucket_label(days):
-    if pd.isna(days) or days < 0:
-        return None
-    if days == 0:
-        return "0"
-    if days == 1:
-        return "1"
-    if days == 2:
-        return "2"
-    if days == 3:
-        return "3"
-    if days <= 5:
-        return "4-5"
-    if days <= 7:
-        return "6-7"
-    return "7+"
-
-
-def week_bucket(day_of_month):
-    # Naive day-of-month grouping (1-7 -> WK1, etc). An earlier version of
-    # this tried to be clever and replicate Excel's WEEKNUM(DAY(...)) via
-    # its actual date-epoch algorithm, which gave 1-6 -> WK1 instead --
-    # that was wrong. Checked directly against the live sheet (every real
-    # ticket with day-of-month 7 shows WK1, every one with day 14 shows
-    # WK2), which confirms the naive scheme is what's actually in use.
-    if day_of_month <= 7:
-        return "WK 1"
-    if day_of_month <= 14:
-        return "WK 2"
-    if day_of_month <= 21:
-        return "WK 3"
-    if day_of_month <= 28:
-        return "WK 4"
-    return "WK 5"
-
-
-def month_sort_key(month_label):
-    return datetime.strptime(month_label, "%b'%y")
-
-
-def empty_bucket_counts():
-    return {b: 0 for b in BUCKETS}
-
-
-def to_percentages(counts):
-    total = sum(counts.values())
-    if total == 0:
-        return {b: 0.0 for b in BUCKETS}
-    return {b: round(counts[b] / total * 100, 1) for b in BUCKETS}
+# Re-exported so validation scripts and anything else importing this module
+# keep working against one definition.
+required_column = lib.required_column
+optional_date_column = lib.optional_date_column
+ageing_days = lib.ageing_days
+bucket_label = lib.tat_bucket_label
+week_bucket = lib.week_bucket
+month_sort_key = lib.month_sort_key
 
 
 def grid_for(df):
@@ -133,26 +57,18 @@ def grid_for(df):
     counts_by_row = {}
     for row_label, bucket_col, partner_filter in ROWS:
         rows = df if partner_filter is None else df[df["_partner_yn"] == partner_filter]
-        counts = empty_bucket_counts()
-        for bucket, n in rows[bucket_col].value_counts().items():
-            if bucket in counts:
-                counts[bucket] = int(n)
-        counts_by_row[row_label] = counts
+        counts_by_row[row_label] = lib.count_by(rows, bucket_col, BUCKETS)
 
     return {
         "counts": counts_by_row,
-        "percentages": {row: to_percentages(counts) for row, counts in counts_by_row.items()},
+        "percentages": {
+            row: lib.percentages_of(counts, BUCKETS) for row, counts in counts_by_row.items()
+        },
     }
 
 
 def main():
-    master_text = kv_store.read_chunked(MASTER_PREFIX)
-    if master_text is None:
-        raise RuntimeError("No master dataset found in KV -- run process_upload.py first")
-
-    # keep_default_na=False: see the comment in process_upload.py -- don't
-    # let pandas silently treat literal "NA" text as a missing value.
-    df = pd.read_csv(io.StringIO(master_text), low_memory=False, keep_default_na=False)
+    df = lib.load_master()
 
     # Created time, Refund/Replacement Group Assignment, and Service
     # Partner Assigned Date Stamp are all cleaned by preprocess_raw.py
@@ -177,15 +93,15 @@ def main():
     spare_base = pd.Series(np.where(partner_yn == "YES", sp_assigned, created), index=df.index)
 
     df["_partner_yn"] = partner_yn
-    df["_created_month"] = created.dt.strftime("%b'%y")
-    df["_created_week"] = created.dt.day.map(week_bucket)
+    df["_created_month"] = lib.month_label(created)
+    df["_created_week"] = created.dt.day.map(lib.week_bucket)
     df["_inward_bucket"] = ageing_days(inward_assigned, created).map(bucket_label)
     df["_spare_bucket"] = ageing_days(spare_assigned, spare_base).map(bucket_label)
     df["_refund_bucket"] = ageing_days(refund_assigned, created).map(bucket_label)
     df["_replacement_bucket"] = ageing_days(replacement_assigned, created).map(bucket_label)
     df["_sp_bucket"] = ageing_days(sp_assigned, created).map(bucket_label)
 
-    months = sorted(df["_created_month"].dropna().unique(), key=month_sort_key)
+    months = lib.sorted_months(df["_created_month"])
 
     monthly = {}
     weekly = {}
@@ -206,8 +122,8 @@ def main():
         "weekly": weekly,
     }
 
-    kv_store.write_chunked(PROCESSED_PREFIX, json.dumps(output))
-    print(f"Wrote {len(months)} months to KV under '{PROCESSED_PREFIX}'")
+    lib.write_processed(PROCESSED_PREFIX, output)
+    print(f"({len(months)} months)")
 
 
 if __name__ == "__main__":
