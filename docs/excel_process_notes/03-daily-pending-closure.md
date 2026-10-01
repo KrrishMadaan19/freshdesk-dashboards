@@ -240,3 +240,111 @@ PRIVATE LIMITED` / `Lybley India Pvt Ltd`. These are distinct values in the
 export and stay distinct rows; merging them would mean guessing which pairs are
 typos. Matching is case-insensitive (as `COUNTIFS` is), so case-only variants do
 collapse into one row.
+
+## Discrepancy audit (2026-10-01)
+
+Every way this dashboard could disagree with the workbook, chased to a cause.
+
+### The two raw sheets agree exactly on 2026
+
+`RAW DATA June onwards` is misnamed: it holds the **whole year**, 2026-01-01 to
+2026-09-23, 177,275 rows, zero duplicate ticket IDs. `RAW-DATA Jan-May` is also
+misnamed — it spans 2025-12-01 to 2026-06-16.
+
+Tickets per creation month, the two sheets side by side:
+
+| Creation month | `RAW-DATA Jan-May` | `RAW DATA June onwards` |
+|---|---|---|
+| Dec 2025 | 22,900 | — |
+| Jan 2026 | 26,279 | 26,279 |
+| Feb 2026 | 17,719 | 17,719 |
+| Mar 2026 | 19,274 | 19,274 |
+| Apr 2026 | 18,724 | 18,724 |
+| May 2026 | 20,298 | 20,298 |
+| Jun 2026 | 9,523 (to 16th) | 20,202 |
+
+Identical on every 2026 month. By ticket ID: 111,816 in both, 22,901 only in the
+Jan-May sheet (22,900 of them created in **December 2025**, plus one June
+ticket), 65,459 only in the full-year sheet (Jun 16 onward). Neither sheet
+repeats a ticket ID.
+
+So the 32,424-row size gap is entirely December 2025 plus a wider window, and no
+month sheet in this workbook covers December 2025. **One uploaded export
+covering 2026 reproduces every month with nothing missing** — the alarming
+column-letter divergence between the two sheets turns out not to matter for
+coverage, only for anyone reading them positionally.
+
+### Row counts now line up with the sheet
+
+Labels were first discovered per month, which dropped any label with no activity
+that month: Sep showed 18 groups against the sheet's 19, and 111 service
+partners against its 161. Every missing row was verified zero for the whole
+month, so no number was ever wrong — but rows that don't line up read as a
+discrepancy, and hunting through 161 rows to find which 50 are merely absent is
+the manual work this is meant to remove.
+
+Labels are now collected across every displayed month, giving:
+
+| Block | Sheet rows | This dashboard |
+|---|---|---|
+| `inflow` | 19 | 19 |
+| `bucket-inflow` | 8 | 8 |
+| `inflow-source` | 11 | 11 |
+| `sp-inflow` | 161 | 160 |
+| `closure` | 19 | 19 |
+| `closure-classification` | 3 | 3 |
+| `sp-closure` | 161 | 160 |
+
+The two it lacks are dead rows in the sheet: `Product Non-Serviceable` never
+receives an SP-assigned date, and `BABITA ELECTRICALS` — not
+`BABITA ELECTRICAL SERVICE`, which is present — has no resolved ticket anywhere
+in the data. Nothing in the data is missing from the sheet's lists either.
+
+### The Inflow block's 156 cells are reassignment, proven
+
+If those differences were a rule error — wrong date column, wrong filter,
+dropped rows — the per-day differences would not balance. They balance exactly,
+on all 22 days the sheet has:
+
+```
+day  cells off   sum of diffs   moved out   moved in
+  1          4              0           7          7
+  8          7              0          20         20
+ 15          9              0          38         38
+ 19         11              0          39         39
+ 22          0              0           0          0   <- most recent paste
+```
+
+Zero on every day: tickets leaving one group exactly equal tickets entering
+another, so none are gained or lost. Combined with day 22 (the most recently
+pasted day, matching the leftover `PIVOT` sheet) being identical and day 23
+being blank in the sheet while the data holds 119 tickets, the Inflow block is a
+stale hand-paste and the computed version is the correct one.
+
+### Full-pipeline check, not just the counting logic
+
+The cell-by-cell validation calls `tally()` on pre-parsed dates, so it proves
+the counting but never exercises `parsed_date()` — the per-column parser choice,
+where every date bug in this project has lived. Running `main()` end to end and
+diffing the JSON it writes against the sheet covers every step:
+
+| Block | Cells | Off |
+|---|---|---|
+| `bucket-inflow` | 240 | 0 |
+| `inflow-source` | 330 | 0 |
+| `sp-inflow` | 4,830 | 0 |
+| `closure` | 570 | 0 |
+| `closure-classification` | 90 | 0 |
+| `sp-closure` | 4,830 | 0 |
+| `inflow` | 570 | 156 (the stale paste above) |
+
+**10,890 of 10,890 cells on the six formula-driven blocks**, through the real
+pipeline.
+
+### Differences that remain by design
+
+| Difference | Why |
+|---|---|
+| Historical months won't match the workbook's frozen sheets | Those sheets were each pasted by hand from a different row set at a different time; the workbook is not self-consistent across months and cannot be reproduced |
+| `Over All Closure` is larger here | The workbook's formula drops its last row — see the bug section above |
+| The site shows days the workbook doesn't | The export runs past the workbook's last refresh; the most recent day is partial |

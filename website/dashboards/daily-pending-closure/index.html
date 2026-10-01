@@ -58,6 +58,15 @@
       color: var(--text-muted);
       margin-left: auto;
     }
+
+    .inline-check {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      cursor: pointer;
+    }
   </style>
 </head>
 <body class="viz-root">
@@ -78,6 +87,10 @@
           <label for="month-select">Month</label>
           <select id="month-select"></select>
         </div>
+        <label class="inline-check">
+          <input type="checkbox" id="hide-empty" />
+          Hide rows with no activity this month
+        </label>
         <span class="row-count" id="row-count"></span>
       </div>
 
@@ -109,6 +122,7 @@
     const gridBodyEl = document.getElementById("grid-body");
     const footnoteEl = document.getElementById("footnote");
     const rowCountEl = document.getElementById("row-count");
+    const hideEmptyEl = document.getElementById("hide-empty");
 
     let data = null;
     let selectedMonth = null;
@@ -195,8 +209,18 @@
       const days = block.days;
 
       blockDescEl.textContent = blockMeta.description;
+
+      // Every month carries the same row set, so rows with nothing this month
+      // are shown by default -- that keeps the grid lined up row-for-row with
+      // the source workbook, which is how anyone checking it reads the two side
+      // by side. The toggle is for when that is not what you're doing.
+      const visibleRows = hideEmptyEl.checked
+        ? block.rows.filter((r) => (block.mtd[r] ?? 0) > 0)
+        : block.rows;
+      const emptyCount = block.rows.length - visibleRows.length;
       rowCountEl.textContent =
-        block.rows.length + (block.rows.length === 1 ? " row" : " rows");
+        `${visibleRows.length} of ${block.rows.length} rows` +
+        (emptyCount && hideEmptyEl.checked ? ` (${emptyCount} empty hidden)` : "");
 
       // Weekday strip above the day numbers -- the source sheet carries one and
       // it is what makes a weekly rhythm legible in a 31-column grid.
@@ -235,7 +259,8 @@
       }
 
       // Heat scale from the category rows only -- the total row would otherwise
-      // flatten every other cell to near-zero shading.
+      // flatten every other cell to near-zero shading. Scaled over all rows,
+      // not just visible ones, so hiding empty rows doesn't reshade the grid.
       let max = 0;
       for (const row of block.rows) {
         for (const day of days) max = Math.max(max, block.counts[row]?.[day] ?? 0);
@@ -279,9 +304,11 @@
         gridBodyEl.appendChild(tr);
       };
 
-      for (const row of block.rows) {
+      for (const row of visibleRows) {
         addRow(row, block.counts[row], block.mtd[row], block.avg[row], false);
       }
+      // The total always covers every row, hidden ones included, so it can't
+      // drift from the grid depending on a display setting.
       addRow(block.totalLabel, block.total, block.totalMtd, block.totalAvg, true);
 
       const notes = [];
@@ -313,6 +340,17 @@
       if (data.latestCreated) {
         notes.push(`Latest ticket created ${data.latestCreated}; latest resolved ${data.latestResolved}. The most recent day may be partial.`);
       }
+      // Surfaced rather than swallowed: a filled-in but unreadable date means
+      // that ticket is missing from every block keyed on the column, and the
+      // only way it ever gets fixed in Freshdesk is if someone is told.
+      if (data.unparsedDates && Object.keys(data.unparsedDates).length) {
+        const parts = Object.entries(data.unparsedDates)
+          .map(([col, n]) => `${n.toLocaleString()} in ${col}`);
+        notes.push(
+          "Unreadable dates in the export, not counted anywhere: " + parts.join(", ") +
+          ". These need correcting in Freshdesk."
+        );
+      }
       footnoteEl.textContent = notes.join(" ");
     }
 
@@ -320,6 +358,8 @@
       selectedMonth = monthSelect.value;
       render();
     });
+
+    hideEmptyEl.addEventListener("change", render);
 
     load();
   </script>

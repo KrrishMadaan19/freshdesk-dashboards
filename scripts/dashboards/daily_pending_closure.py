@@ -116,6 +116,23 @@ BLOCKS = [
 ]
 
 
+def unparsed_count(df, name, parsed):
+    """How many non-blank values in this column failed to parse.
+
+    Reported rather than swallowed. The 2026-09-30 export carried 55 `Refund
+    Group Assignment` values reading "13-07-20026" -- a mistyped year, in a
+    column that is otherwise ISO. No parser can rescue a year of 20026, so they
+    are genuinely unusable and are dropped; what would be wrong is dropping them
+    invisibly, because then nobody ever fixes the source records. 55 of 19,420
+    is small, but the only way anyone learns it is non-zero is if the page says
+    so.
+    """
+    if name not in df.columns:
+        return 0
+    non_blank = df[name].fillna("").astype(str).str.strip() != ""
+    return int((non_blank & parsed.isna()).sum())
+
+
 def parsed_date(df, name):
     """A date column as a normalised date series, parsed the way that column
     needs. Which parser applies is NOT a property of this dashboard -- it is a
@@ -249,6 +266,16 @@ def main():
     resolved = parsed_date(df, RESOLVED_COL)
     sp_assigned = parsed_date(df, col.SERVICE_PARTNER_ASSIGNED_DATE_STAMP)
 
+    # Every date column this dashboard reads, checked for values that are filled
+    # in but unreadable -- see unparsed_count().
+    unparsed = {}
+    for name in [CREATED_COL, RESOLVED_COL] + BUCKET_DATE_COLS:
+        n = unparsed_count(df, name, parsed_date(df, name))
+        if n:
+            unparsed[name] = n
+            print(f"WARNING: {n} unreadable date(s) in '{name}' -- these rows are "
+                  f"not counted in any block keyed on that column")
+
     group = text_column(df, GROUP_COL)
     source = text_column(df, SOURCE_COL)
     partner = text_column(df, PARTNER_COL)
@@ -285,6 +312,32 @@ def main():
         "closure-classification": CLASSIFICATION_ROWS,
     }
 
+    # Discovered labels are collected across EVERY month, not per month, so all
+    # months show the same rows in the same order.
+    #
+    # Per-month discovery was the obvious choice and the wrong one: it drops a
+    # label with no activity that month, so Sep showed 18 groups against the
+    # workbook's 19 and 111 service partners against its 161. Every one of those
+    # missing rows was zero all month -- verified, no exceptions -- so no number
+    # was ever wrong, but rows that don't line up read as a discrepancy to
+    # anyone comparing the two side by side, and checking 161 rows to find
+    # which 50 are merely absent is exactly the manual work this replaces.
+    #
+    # Across the dataset this yields 19 / 11 / 19 / 160 / 160 rows against the
+    # sheet's 19 / 11 / 19 / 161 / 161. The two it lacks are dead rows in the
+    # sheet: `Product Non-Serviceable` never receives an SP-assigned date, and
+    # `BABITA ELECTRICALS` (not to be confused with `BABITA ELECTRICAL SERVICE`,
+    # which is present) has no resolved ticket anywhere in the data.
+    row_order = {}
+    for key, _, _, _ in BLOCKS:
+        if key in FIXED_ROWS:
+            row_order[key] = FIXED_ROWS[key]
+            continue
+        labels = set()
+        for month in months:  # only displayed months, so no row is zero everywhere
+            labels |= set(tallies[key].get(month, {}))
+        row_order[key] = sort_labels(labels)
+
     monthly = {}
     for month in months:
         period = pd.Period(lib.month_sort_key(month), freq="M")
@@ -313,7 +366,7 @@ def main():
             ],
             "blocks": {
                 key: build_block(
-                    tallies[key], month, FIXED_ROWS.get(key), total_label,
+                    tallies[key], month, row_order[key], total_label,
                     days_in_month, avg_days,
                 )
                 for key, _, total_label, _ in BLOCKS
@@ -329,6 +382,7 @@ def main():
         "monthly": monthly,
         "latestCreated": created.max().date().isoformat() if created.notna().any() else None,
         "latestResolved": resolved.max().date().isoformat() if resolved.notna().any() else None,
+        "unparsedDates": unparsed,
     }
 
     lib.write_processed(PROCESSED_PREFIX, output)
