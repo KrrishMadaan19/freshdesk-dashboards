@@ -3,6 +3,13 @@ name: Process Upload
 on:
   repository_dispatch:
     types: [raw-upload]
+  # Lets the transforms be re-run against the upload already in KV, from the
+  # Actions tab, without re-uploading the export. Needed whenever a dashboard
+  # is added or a transform is fixed: the data hasn't changed, only the code
+  # that reads it, and re-uploading a 120MB export to recompute it would be
+  # absurd. process_upload.py rebuilds the master dataset from the same raw
+  # upload, so running this twice produces the same result as running it once.
+  workflow_dispatch:
 
 jobs:
   process:
