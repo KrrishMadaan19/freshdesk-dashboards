@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Daily Pending and Closure — Freshdesk Analytics Dashboards</title>
+  <link rel="stylesheet" href="/style.css" />
+  <link rel="stylesheet" href="/dashboard-common.css" />
+  <style>
+    /* This dashboard is seven separate tables rather than one, so the block
+       picker needs to wrap on narrow screens instead of scrolling off. */
+    .block-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin: 0 0 1.25rem;
+    }
+
+    .block-description {
+      margin: 0 0 1rem;
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+    }
+
+    /* Day columns are narrow and numerous; the row label has to stay readable
+       while the grid scrolls under it. */
+    table.heatmap th.row-label {
+      position: sticky;
+      left: 0;
+      background: var(--surface-1);
+      z-index: 1;
+      max-width: 17rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    table.heatmap td,
+    table.heatmap th {
+      padding: 0.35rem 0.45rem;
+    }
+
+    table.heatmap thead th.weekend {
+      color: var(--text-muted);
+    }
+
+    table.heatmap td.zero .count {
+      color: var(--text-muted);
+      font-weight: 400;
+    }
+
+    table.heatmap td.mtd,
+    table.heatmap th.mtd {
+      border-left: 2px solid var(--text-muted);
+    }
+
+    .row-count {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      margin-left: auto;
+    }
+  </style>
+</head>
+<body class="viz-root">
+  <nav class="top-links">
+    <a href="/">Home</a>
+    <a href="/upload/">Upload export</a>
+  </nav>
+  <header>
+    <h1>Daily Pending and Closure</h1>
+    <p>Daily inflow and closure by group, channel, bucket movement and service partner.</p>
+  </header>
+  <main>
+    <div id="status" class="status-message">Loading…</div>
+
+    <div id="dashboard" hidden>
+      <div class="controls-row">
+        <div id="month-picker">
+          <label for="month-select">Month</label>
+          <select id="month-select"></select>
+        </div>
+        <span class="row-count" id="row-count"></span>
+      </div>
+
+      <div class="block-tabs week-tabs" id="block-tabs"></div>
+      <p class="block-description" id="block-description"></p>
+
+      <div class="table-scroll">
+        <table class="heatmap">
+          <thead>
+            <tr id="weekday-row"></tr>
+            <tr id="header-row"></tr>
+          </thead>
+          <tbody id="grid-body"></tbody>
+        </table>
+      </div>
+
+      <p class="footnote" id="footnote"></p>
+    </div>
+  </main>
+
+  <script>
+    const statusEl = document.getElementById("status");
+    const dashboardEl = document.getElementById("dashboard");
+    const monthSelect = document.getElementById("month-select");
+    const blockTabsEl = document.getElementById("block-tabs");
+    const blockDescEl = document.getElementById("block-description");
+    const weekdayRowEl = document.getElementById("weekday-row");
+    const headerRowEl = document.getElementById("header-row");
+    const gridBodyEl = document.getElementById("grid-body");
+    const footnoteEl = document.getElementById("footnote");
+    const rowCountEl = document.getElementById("row-count");
+
+    let data = null;
+    let selectedMonth = null;
+    let selectedBlock = null;
+
+    function showEmptyState() {
+      statusEl.innerHTML = "";
+      const line = document.createElement("p");
+      line.style.margin = "0 0 0.75rem";
+      line.textContent = "No data yet.";
+      const hint = document.createElement("p");
+      hint.style.margin = "0";
+      hint.style.fontSize = "0.85rem";
+      const link = document.createElement("a");
+      link.href = "/upload/";
+      link.textContent = "Upload a Freshdesk export";
+      hint.appendChild(link);
+      hint.appendChild(document.createTextNode(" to populate this dashboard."));
+      statusEl.appendChild(line);
+      statusEl.appendChild(hint);
+      dashboardEl.hidden = true;
+    }
+
+    async function load() {
+      try {
+        const response = await fetch("/api/dashboards/daily-pending-closure");
+        if (response.status === 404) {
+          showEmptyState();
+          return;
+        }
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          throw new Error(body.error || `Request failed (${response.status})`);
+        }
+        data = await response.json();
+        if (!data.months || data.months.length === 0) {
+          showEmptyState();
+          return;
+        }
+        selectedMonth = data.months[data.months.length - 1];
+        selectedBlock = data.blocks[0].key;
+        populateMonthSelect();
+        buildBlockTabs();
+        statusEl.hidden = true;
+        dashboardEl.hidden = false;
+        render();
+      } catch (err) {
+        statusEl.textContent = err.message || "Failed to load dashboard data.";
+      }
+    }
+
+    function populateMonthSelect() {
+      monthSelect.innerHTML = "";
+      for (const month of data.months) {
+        const option = document.createElement("option");
+        option.value = month;
+        option.textContent = month;
+        if (month === selectedMonth) option.selected = true;
+        monthSelect.appendChild(option);
+      }
+    }
+
+    function buildBlockTabs() {
+      blockTabsEl.innerHTML = "";
+      for (const block of data.blocks) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = block.title;
+        button.classList.toggle("active", block.key === selectedBlock);
+        button.addEventListener("click", () => {
+          selectedBlock = block.key;
+          for (const b of blockTabsEl.children) b.classList.remove("active");
+          button.classList.add("active");
+          render();
+        });
+        blockTabsEl.appendChild(button);
+      }
+    }
+
+    function render() {
+      const month = data.monthly[selectedMonth];
+      const blockMeta = data.blocks.find((b) => b.key === selectedBlock);
+      const block = month.blocks[selectedBlock];
+      const days = block.days;
+
+      blockDescEl.textContent = blockMeta.description;
+      rowCountEl.textContent =
+        block.rows.length + (block.rows.length === 1 ? " row" : " rows");
+
+      // Weekday strip above the day numbers -- the source sheet carries one and
+      // it is what makes a weekly rhythm legible in a 31-column grid.
+      weekdayRowEl.innerHTML = "";
+      const wdCorner = document.createElement("th");
+      wdCorner.className = "row-label";
+      weekdayRowEl.appendChild(wdCorner);
+      days.forEach((day, i) => {
+        const th = document.createElement("th");
+        const wd = month.weekdays[i] || "";
+        th.textContent = wd;
+        if (wd === "SAT" || wd === "SUN") th.className = "weekend";
+        weekdayRowEl.appendChild(th);
+      });
+      for (const label of ["MTD", "AVG"]) {
+        const th = document.createElement("th");
+        if (label === "MTD") th.className = "mtd";
+        weekdayRowEl.appendChild(th);
+      }
+
+      headerRowEl.innerHTML = "";
+      const corner = document.createElement("th");
+      corner.className = "row-label";
+      corner.textContent = blockMeta.title;
+      headerRowEl.appendChild(corner);
+      for (const day of days) {
+        const th = document.createElement("th");
+        th.textContent = day;
+        headerRowEl.appendChild(th);
+      }
+      for (const label of ["MTD", "AVG"]) {
+        const th = document.createElement("th");
+        th.textContent = label;
+        if (label === "MTD") th.className = "mtd";
+        headerRowEl.appendChild(th);
+      }
+
+      // Heat scale from the category rows only -- the total row would otherwise
+      // flatten every other cell to near-zero shading.
+      let max = 0;
+      for (const row of block.rows) {
+        for (const day of days) max = Math.max(max, block.counts[row]?.[day] ?? 0);
+      }
+
+      gridBodyEl.innerHTML = "";
+
+      const addRow = (label, perDay, mtd, avg, isTotal) => {
+        const tr = document.createElement("tr");
+        const rowTh = document.createElement("th");
+        rowTh.className = "row-label";
+        rowTh.textContent = label;
+        rowTh.title = label;
+        tr.appendChild(rowTh);
+
+        for (const day of days) {
+          const count = perDay?.[day] ?? 0;
+          const td = document.createElement("td");
+          td.className = count === 0 ? "cell zero" : "cell";
+          if (!isTotal && max > 0 && count > 0) {
+            td.style.backgroundColor = `rgba(var(--heat-rgb), ${0.08 + (count / max) * 0.77})`;
+          }
+          const span = document.createElement("span");
+          span.className = "count";
+          span.textContent = count.toLocaleString();
+          td.appendChild(span);
+          tr.appendChild(td);
+        }
+
+        const mtdTd = document.createElement("td");
+        mtdTd.className = "total mtd";
+        mtdTd.textContent = (mtd ?? 0).toLocaleString();
+        tr.appendChild(mtdTd);
+
+        const avgTd = document.createElement("td");
+        avgTd.className = "total";
+        avgTd.textContent = (avg ?? 0).toLocaleString();
+        tr.appendChild(avgTd);
+
+        if (isTotal) tr.classList.add("grand-total-row");
+        gridBodyEl.appendChild(tr);
+      };
+
+      for (const row of block.rows) {
+        addRow(row, block.counts[row], block.mtd[row], block.avg[row], false);
+      }
+      addRow(block.totalLabel, block.total, block.totalMtd, block.totalAvg, true);
+
+      const notes = [];
+      if (month.lastDayWithData) {
+        notes.push(
+          `AVG is per day across the ${month.avgDays} day${month.avgDays === 1 ? "" : "s"} ` +
+          `this month has data for (through the ${month.lastDayWithData}), not across all ` +
+          `${month.daysInMonth} — so it isn't diluted by days that haven't happened yet. ` +
+          `MTD is the whole month.`
+        );
+      }
+      if (selectedBlock === "closure") {
+        notes.push(
+          "The total row sums every group. The source workbook's Over All Closure formula " +
+          "stops one row short and silently drops the last group — it understates by 47 on " +
+          "Sep 1 — so it is not reproduced here."
+        );
+      }
+      if (selectedBlock === "inflow") {
+        notes.push(
+          "Computed from creation date and group. In the source workbook this block is pasted " +
+          "by hand from a daily pivot, so its older days keep whatever group a ticket had at " +
+          "paste time; this is recalculated from the current data every upload."
+        );
+      }
+      if (selectedBlock === "sp-inflow") {
+        notes.push("Counted on Service Partner Assigned Date Stamp, not on creation or resolution.");
+      }
+      if (data.latestCreated) {
+        notes.push(`Latest ticket created ${data.latestCreated}; latest resolved ${data.latestResolved}. The most recent day may be partial.`);
+      }
+      footnoteEl.textContent = notes.join(" ");
+    }
+
+    monthSelect.addEventListener("change", () => {
+      selectedMonth = monthSelect.value;
+      render();
+    });
+
+    load();
+  </script>
+</body>
+</html>

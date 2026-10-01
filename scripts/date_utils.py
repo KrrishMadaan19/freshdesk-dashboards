@@ -39,7 +39,15 @@ def parse_native_timestamp(series):
     # is (preprocess_raw.py writes every date column back as YYYY-MM-DD),
     # but a fresh raw upload is NOT guaranteed to be; use parse_any_date
     # for that instead.
-    return pd.to_datetime(series, errors="coerce")
+    #
+    # format="ISO8601" rather than letting pandas infer: without it,
+    # to_datetime picks ONE format from the first value and NaTs every
+    # value that doesn't match it -- incident 2, in its ISO form. A column
+    # holding both "2026-01-08 10:30:00" and "2026-01-08" silently lost
+    # every date-only value. ISO8601 accepts any valid ISO variant
+    # per-element and costs nothing (marginally faster than inference on
+    # 177k rows), so there's no reason not to be strict here.
+    return pd.to_datetime(series, errors="coerce", format="ISO8601")
 
 
 def _is_year_first(sample):
@@ -61,8 +69,19 @@ def parse_any_date(series):
     day-first from a sample of the actual values, then parses the whole
     column accordingly (day-first goes through parse_ddmmyyyy's
     element-wise handling, since day-first exports have also shown
-    inconsistent sub-formats)."""
-    sample = series.dropna().head(20).tolist()
+    inconsistent sub-formats).
+
+    The sample skips BLANKS, not just nulls. Reading the first 20 rows
+    outright was silently wrong on sparse columns: the dataset holds blanks
+    as "" (keep_default_na=False, deliberately -- see process_upload.py), so
+    dropna() keeps them, and a column whose first 20 rows happen to be empty
+    produced no evidence at all and fell through to day-first. On a column
+    that was actually ISO that is incident 1 -- "2026-01-08" read as
+    2026-08-01. Caught on `Pickup Initiated Date` and `Escalation Group
+    Assignment`, both sparse enough to start with 20 blanks.
+    """
+    text = series.dropna().astype(str).str.strip()
+    sample = text[text != ""].head(20).tolist()
     if _is_year_first(sample):
         return parse_native_timestamp(series)
     return parse_ddmmyyyy(series)

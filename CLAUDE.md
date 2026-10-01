@@ -149,7 +149,25 @@ freshdesk-dashboards/
       docs/excel_process_notes/01-creation-to-assignment.md for the full
       story.*
 - [ ] 2. Pendency View
-- [ ] 3. Daily Pending and Closure Dashboard
+- [x] 3. Daily Pending and Closure Dashboard — *built and validated. Seven
+      blocks per month (inflow by group, by bucket movement date, by source,
+      by service partner; closure by group, by product classification, by
+      service partner). Six of the seven reproduce the source workbook's
+      SEP'26 grid EXACTLY from the workbook's own raw rows — 10,890 cells,
+      zero mismatches, including both 4,830-cell service-partner blocks. The
+      seventh (`Inflow`) is pasted-by-hand in the workbook: every day's total
+      matches, but individual group cells drift because the paste freezes a
+      ticket's group at paste time, and day 23 was never pasted at all.
+      Two source bugs found: `Over All Closure` sums one row short and drops
+      `Testing` (47 tickets on Sep 1, wrong on 10 of 30 days) — NOT
+      reproduced, because unlike Dashboard 5's total bug it drops whichever
+      row sorts last; and the workbook's two raw sheets put different fields
+      at the same column letters (`AF` is `Partner Name` in one and `Service`
+      in the other), which is the clearest vindication yet of addressing
+      everything by name. Only the workbook's SEP'26 sheet is live — every
+      earlier month is a frozen paste with a different row set, so row labels
+      here are discovered from the data instead. See
+      docs/excel_process_notes/03-daily-pending-closure.md.*
 - [ ] 4. C-SAT Tracker Report
 - [x] 5. Overall Cancelled Report — *built and validated. Logic proven
       against the source workbook's own 87,972 raw rows: all four derived
