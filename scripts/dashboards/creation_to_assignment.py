@@ -82,11 +82,17 @@ def main():
     replacement_assigned = date_utils.parse_native_timestamp(optional_date_column(df, REPLACEMENT_COL))
 
     # Inward Payment Group Assignment and Spare Group Assignment are NOT
-    # covered by preprocess_raw.py's cleanup rules, so they still arrive
-    # as raw, inconsistently-formatted DD-MM-YYYY text and need the
-    # defensive element-wise parser.
-    inward_assigned = date_utils.parse_ddmmyyyy(optional_date_column(df, INWARD_COL))
-    spare_assigned = date_utils.parse_ddmmyyyy(optional_date_column(df, SPARE_COL))
+    # covered by preprocess_raw.py's cleanup rules, so they arrive in whatever
+    # format the export used.
+    #
+    # parse_any_date, which detects that format, NOT parse_ddmmyyyy, which
+    # assumes day-first: the 2026-09-30 export delivered both of these as ISO,
+    # and forcing day-first transposed day and month on 2,996 of 8,660 Spare
+    # values and 567 of 1,555 Inward Payment ones -- every date with both parts
+    # <= 12. Spare feeds the SP TO SPARE TAT rows directly, so those ageings
+    # were wrong by whole months for about a third of tickets.
+    inward_assigned = date_utils.parse_any_date(optional_date_column(df, INWARD_COL))
+    spare_assigned = date_utils.parse_any_date(optional_date_column(df, SPARE_COL))
 
     partner_col = df[PARTNER_COL] if PARTNER_COL in df.columns else pd.Series("", index=df.index)
     partner_yn = np.where(partner_col.fillna("").astype(str).str.strip() == "", "NO", "YES")

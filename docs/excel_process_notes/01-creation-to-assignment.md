@@ -434,3 +434,66 @@ day-counts than reality) for any month it had processed. Re-upload the
 current master dataset (or wait for the next scheduled upload) and
 re-run `scripts/dashboards/creation_to_assignment.py` to correct
 already-published numbers once this fix is deployed.
+
+## Real bug #4 found and fixed (2026-10-01): day-first parsing applied to ISO data
+
+Found while building Dashboard 3, which needed four date columns this dashboard
+never read. Checking what parser each one wanted exposed the fact that the
+columns *this* dashboard reads were being parsed wrongly too.
+
+### What was wrong
+
+`preprocess_raw.py` and this dashboard called `date_utils.parse_ddmmyyyy` on
+every date column except `Created time` / `Resolved time` / `WhatsApp Survey
+Received`. That function forces `dayfirst=True`. The 2026-09-30 export delivered
+all of those columns as **ISO** — `"2026-01-06 11:47:29"` — and day-first
+parsing transposes day and month whenever both are ≤ 12.
+
+Measured on the real export, 181,423 rows:
+
+| Column | Non-blank values | Transposed | % wrong |
+|---|---|---|---|
+| `Close Looping Group Assignment` | 178,017 | 62,916 | 35.3% |
+| `Replacement Group Assignment` | 42,547 | 14,691 | 34.5% |
+| `Service Partner Assigned Date Stamp` | 33,272 | 11,838 | 35.6% |
+| `Refund Group Assignment` | 19,420 | 7,690 | 39.6% |
+| `Spare Group Assignment` | 8,660 | 2,996 | 34.6% |
+| `Inward Payment Group Assignment` | 1,555 | 567 | 36.5% |
+
+≈100,700 dates, with `2026-01-06` read as 1 June. Every TAT row on this
+dashboard depends on at least one of these columns, so ageings were wrong by
+whole months for roughly a third of tickets.
+
+### How it was proven rather than argued
+
+`preprocess_raw.py`'s rule 4 copies `Resolved time` into a blank `Close Looping
+Group Assignment` — the same text, from the same cell. But the two columns went
+through different parsers: `Resolved time` through `parse_any_date` (which
+detects the format) and `Close Looping` through `parse_ddmmyyyy` (which assumes
+one). The two columns therefore disagreed in the module's own output, from an
+identical source value. There is no reading of the data under which both results
+are right.
+
+### Why every validation passed anyway
+
+This is the part worth remembering. The validation scripts compare against the
+**source workbook's** exported raw data, which is day-first — so `parse_ddmmyyyy`
+was the *correct* parser there, and all three dashboards validated clean against
+their ground truth while production was being fed ISO and getting it wrong.
+
+A validation that only ever sees one input format cannot catch a format bug. It
+proves the *logic*, which is what it was built for and what it did well. The
+parser choice is a separate axis and needs its own test against the real export —
+which is what `parse_any_date`'s detection and the run on the actual 181,423-row
+file now provide.
+
+### The fix
+
+Every direct caller now uses `date_utils.parse_any_date`, which samples the
+actual values and picks the parser from them. `parse_ddmmyyyy` is only reached
+once day-first has genuinely been established. Two latent faults in the shared
+helpers were fixed alongside it (see incidents 4's neighbours in
+`date_utils.py`): `parse_native_timestamp` inferred a single format per column
+and silently dropped date-only values from a mixed ISO column, and
+`parse_any_date` sampled the first 20 rows including blanks, so a sparse column
+opening with 20 empties produced no evidence and fell through to day-first.

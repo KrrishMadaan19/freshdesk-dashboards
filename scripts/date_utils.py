@@ -17,6 +17,18 @@ full story of each:
    and "DD/MM/YY" (day-first, no time, 2-digit year) in another. Do NOT
    assume a fixed format by column name -- detect it from the actual
    data on every new upload (see parse_any_date below).
+4. (2026-10-01) Incident 3's lesson was learned for Created time and
+   Resolved time but never applied to the other date columns, which kept
+   calling parse_ddmmyyyy directly. The 2026-09-30 export delivered all
+   of them as ISO, so ~100,700 values across six columns came out with
+   day and month transposed -- every date whose day and month were both
+   <= 12, about 35% of each column. Nothing detected it for weeks
+   because the validation scripts compare against the SOURCE WORKBOOK's
+   exported raw data, which is day-first, so parse_ddmmyyyy was correct
+   THERE and every dashboard validated clean while production was wrong.
+   A validation that only ever sees one input format cannot catch a
+   format bug. Every caller now goes through parse_any_date; reach for
+   parse_ddmmyyyy only when the data is known day-first.
 """
 
 import re

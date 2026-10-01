@@ -82,8 +82,24 @@ COL_SP_ASSIGN_DT = col.SERVICE_PARTNER_ASSIGNED_DATE_STAMP
 
 EXCLUDED_PARTNERS = ["Chat 360", "Product Non-Serviceable", "Service Denial"]
 
-# Freshdesk's own timestamp fields vs. the custom/webhook-populated ones
-# -- see date_utils.py for why these need different parsers.
+# Freshdesk's own timestamp fields vs. the custom/webhook-populated ones.
+#
+# Both groups are now parsed with date_utils.parse_any_date, which DETECTS
+# year-first vs day-first from the actual values. Until 2026-10-01 the custom
+# columns below were parsed with parse_ddmmyyyy, which forces day-first -- and
+# the 2026-09-30 export delivered every one of them as ISO
+# ("2026-01-06 11:47:29"), so roughly 35% of their values (every date whose day
+# and month were both <= 12) came out with day and month transposed: 62,916 of
+# 178,017 Close Looping values, 14,691 of 42,547 Replacement, 11,838 of 33,272
+# Service Partner Assigned, ~100,700 in all.
+#
+# It was provable from inside this module's own output: rule 4 below copies
+# Resolved time into a blank Close Looping Group Assignment, and the two then
+# disagreed, because Resolved time was format-detected and Close Looping was
+# not. Same source value, two different dates.
+#
+# The lists are kept separate because they still differ in how they are written
+# back (date-only vs. keeping time-of-day), not in how they are parsed.
 NATIVE_TIMESTAMP_COLS = [COL_CREATED, COL_RESOLVED, COL_WHATSAPP_SURV]
 # Date-only, safe to normalize -- always compared against Created time
 # (also date-only). COL_SP_ASSIGN_DT is handled separately -- see the
@@ -116,13 +132,19 @@ def process(df):
 
     for col in CUSTOM_DATE_COLS:
         if col in df.columns:
-            df[col] = date_utils.parse_ddmmyyyy(df[col]).dt.normalize()
+            # parse_any_date, not parse_ddmmyyyy: these are raw upload columns
+            # whose format is not ours to assume. See the note below.
+            df[col] = date_utils.parse_any_date(df[col]).dt.normalize()
 
     if COL_SP_ASSIGN_DT in df.columns:
         # No .dt.normalize() here -- see the module docstring. Blank/
         # unparseable values become NaT, same as is_blank() would flag on
         # the raw text, so rule 5 below can check .isna() directly.
-        df[COL_SP_ASSIGN_DT] = date_utils.parse_ddmmyyyy(df[COL_SP_ASSIGN_DT])
+        #
+        # parse_any_date for the same reason as the loop above: this column
+        # arrived as ISO in the 2026-09-30 export, and forcing day-first on it
+        # moved 11,838 of its 33,272 values to the wrong date.
+        df[COL_SP_ASSIGN_DT] = date_utils.parse_any_date(df[COL_SP_ASSIGN_DT])
 
     if COL_GROUP in df.columns and COL_REPL_GROUP in df.columns:
         mask = (df[COL_GROUP].astype(str).str.strip() == "Replacement") & is_blank(df[COL_REPL_GROUP])
