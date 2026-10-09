@@ -108,9 +108,20 @@ export async function onRequestPost({ request, env }) {
         Accept: "application/vnd.github+json",
         "User-Agent": "freshdesk-dashboards-upload",
       },
+      // uploadId and chunks travel WITH the dispatch so the run processes
+      // exactly this upload, rather than re-deriving "the latest one" from KV
+      // when it starts.
+      //
+      // Re-deriving lost an upload on 2026-10-09: a run started at 09:25:21,
+      // read `raw:<date>:manifest`, and got the previous upload's manifest
+      // because this one's was not written until 09:25:41. It then rebuilt
+      // every dashboard from the older file and reported success, so the site
+      // showed stale data with nothing to indicate it. KV reads are
+      // eventually consistent too, which can produce the same outcome even
+      // when the write came first.
       body: JSON.stringify({
         event_type: "raw-upload",
-        client_payload: { prefix, date },
+        client_payload: { prefix, date, uploadId, chunks: total, format },
       }),
     }
   );
