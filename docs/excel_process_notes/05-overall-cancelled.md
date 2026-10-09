@@ -253,3 +253,79 @@ export pulled 24 Sep, and tickets change in between. Re-exporting both on
 the same day removes it. Note `Jan'26`–`Apr'26` match the workbook
 *exactly* (13,554 / 8,607 / 8,088 / 9,132), which is what confirms the
 drift is age rather than logic.
+
+## Discrepancy audit (2026-10-09)
+
+### Full-pipeline validation — the check this dashboard never had
+
+The original validation (`validate_against_workbook_raw.py`) recomputes the
+derivations itself and compares two grids. That proves the formulas, which is
+what it was for, but it never runs the transform — so it cannot see the
+per-column parser choice, which is where every date bug in this project has
+lived (see "Real bug #4" in `01-creation-to-assignment.md`).
+
+`validate_oc_full.py` runs `overall_cancelled.main()` end to end with KV stubbed
+and diffs the JSON it would write against **all three** sheets, every cell:
+
+| Sheet | Cells | Off |
+|---|---|---|
+| `OVERALL - DASHBOARD` (9 months × 15 rows) | 150 | **0** |
+| `WEEKLY` (Sep'26) | 75 | **0** |
+| `DAILY TREND` (Sep'26) | 465 | **0** |
+
+**690 of 690.** The `Grand Total` row matches too, confirming the deliberate
+reproduction of the workbook's short `=SUM(B3:B15)` is faithful. The `Blanks`
+row triggered no non-zero warning, so it is provably dead and omitting it loses
+nothing.
+
+Note for anyone extending that validator: match column labels
+**case-insensitively**. The sheet's header row displays `JAN'26` while its own
+`RESOLVED MONTH` helper — what the `COUNTIFS` actually compares against —
+emits `Jan'26`. `COUNTIFS` does not care; an exact dict lookup does, and
+reported 111 phantom mismatches until fixed.
+
+### The allow-list is complete
+
+`CANCELLED_TYPES` is deliberately an allow-list, so a cancellation type added in
+Freshdesk later would simply not appear rather than being folded silently into a
+total. That is only safe if someone checks. Against the live export (181,423
+rows), all 13 listed types are present (62,586 tickets), and of the 13 types
+**not** listed, 12 are unmistakably genuine resolutions:
+
+```
+Inquiry Resolved - Through Information      Issue Resolved - With Replacement
+Issue Resolved - With Refund                Issue Resolved - Without Spare
+Issue Resolved - With Spare                 Issue Resolved - Accessories Only
+Resolved - With Installation                Inquiry Resolved - Through Troubleshooting
+SC Inquiry Resolved - Through Information   L0 / L1 / L2 Issue Resolved tiers
+```
+
+Those are, almost exactly, the CSAT trigger list from `Dashboard Updation
+list.pdf`. The cancellation allow-list and the CSAT resolution list are near
+complements, which is independent evidence the split is drawn in the right
+place.
+
+**One open question: `Fraud found` (2 tickets)** sits outside both lists. The
+workbook does not count it either, so this is not a divergence from the sheet —
+but whether a fraud finding is a cancellation is a business call, not a
+technical one. Left out, matching the workbook; add it to `CANCELLED_TYPES` if
+the answer is yes.
+
+### Beware: concurrent pipeline runs used to interleave
+
+While auditing, two `Process Upload` runs overlapped by seven seconds — one
+processing the previous upload, one processing a new one that arrived mid-run.
+Both wrote the same `processed:*` keys in the same order, so for several minutes
+the site served Dashboard 1 from one dataset and Dashboard 5 from another: every
+number individually correct, the set of them incoherent.
+
+This produced a convincing false alarm. Comparing the live API against a local
+analysis of the *previous* upload showed a 219-row gap, which looked like a
+silent KV write failure — it was neither. The two exports simply differ (181,423
+rows vs 180,899), and the dashboards had been rebuilt from the newer one.
+
+Fixed with a `concurrency` group on the workflow (`cancel-in-progress: false`,
+so an in-flight run finishes rather than leaving a half-replaced master
+dataset). The lesson for future audits: **confirm which upload produced the live
+data before attributing a difference to the code.** The run log's
+`Reading raw upload: raw:YYYY-MM-DD` line is the fact to check first.

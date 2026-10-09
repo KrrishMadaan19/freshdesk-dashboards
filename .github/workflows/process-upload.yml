@@ -11,6 +11,25 @@ on:
   # upload, so running this twice produces the same result as running it once.
   workflow_dispatch:
 
+# Only one of these may run at a time, and a queued one is NOT cancelled.
+#
+# On 2026-10-09 two runs overlapped by seven seconds: one processing the
+# previous upload, one processing a new one that arrived mid-run. They wrote the
+# same `processed:*` keys in the same order, so for several minutes the site
+# served Dashboard 1 from one dataset and Dashboard 5 from the other -- every
+# individual number correct, the set of them incoherent. That is the worst
+# shape a reporting bug can take, because nothing errors and nothing looks
+# wrong until someone cross-checks two dashboards against each other.
+#
+# cancel-in-progress stays false deliberately: the in-flight run is already
+# rebuilding the master dataset, and killing it halfway would leave KV holding
+# a half-replaced dataset. Letting it finish and then running the newer upload
+# costs a few minutes and always ends on the newest data, because
+# process_upload.py reads whichever raw upload is latest at the time it starts.
+concurrency:
+  group: process-upload
+  cancel-in-progress: false
+
 jobs:
   process:
     runs-on: ubuntu-latest
