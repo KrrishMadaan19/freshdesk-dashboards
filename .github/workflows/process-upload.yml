@@ -54,10 +54,28 @@ jobs:
       # transform can't stop the rest from updating -- but the step still
       # exits non-zero, so the failure isn't silently swallowed.
       - name: Run dashboard transforms
+        env:
+          # The upload page's selection, as a comma-separated list. Empty for a
+          # manual run or an upload from before the picker existed, which means
+          # "all" -- recomputing everything is the safe default.
+          #
+          # Read through env rather than interpolated into the script: a
+          # ${{ }} expansion lands in the shell as literal text, so a payload
+          # containing shell syntax would execute. The Function also validates
+          # each name against a fixed list, so this is belt and braces.
+          SELECTED: ${{ join(github.event.client_payload.dashboards, ',') }}
         run: |
           failed=""
+          skipped=""
           for f in scripts/dashboards/*.py; do
             [ -e "$f" ] || continue
+            # creation_to_assignment.py -> creation-to-assignment, which is the
+            # name the upload page and the processed: KV prefix both use.
+            name=$(basename "$f" .py | tr '_' '-')
+            if [ -n "$SELECTED" ] && ! printf '%s' ",$SELECTED," | grep -q ",$name,"; then
+              skipped="$skipped $name"
+              continue
+            fi
             echo "::group::$f"
             if python "$f"; then
               echo "OK: $f"
@@ -67,6 +85,10 @@ jobs:
             fi
             echo "::endgroup::"
           done
+          if [ -n "$skipped" ]; then
+            echo "Not rebuilt (not selected for this upload):$skipped"
+            echo "  -- these keep the figures from the previous export until rebuilt."
+          fi
           if [ -n "$failed" ]; then
             echo "Failed transforms:$failed"
             exit 1

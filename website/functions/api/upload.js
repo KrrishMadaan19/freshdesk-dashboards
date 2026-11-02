@@ -16,6 +16,20 @@ const ALLOWED_FORMATS = ["csv", "xlsx", "xls", "xlsb"];
 // number rather than trusting what we record here.
 const ALREADY_COMPRESSED = ["xlsx", "xlsb"];
 
+// The dashboards an upload may ask to rebuild. Each name is the transform
+// script's filename with underscores as hyphens (creation_to_assignment.py ->
+// creation-to-assignment), which is also its processed: KV prefix, so the
+// workflow can map a name back to a script without a lookup table.
+//
+// An allow-list, not a pass-through: these names reach a shell loop in the
+// workflow, so accepting arbitrary text here would be a command injection.
+// Adding a dashboard means adding its name here and a checkbox on the page.
+const KNOWN_DASHBOARDS = [
+  "creation-to-assignment",
+  "daily-pending-closure",
+  "overall-cancelled",
+];
+
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -71,6 +85,21 @@ export async function onRequestPost({ request, env }) {
     return json({ error: "Missing or malformed chunk index/total." }, 400);
   }
 
+  // Which dashboards this upload should rebuild. Validated against a fixed set
+  // rather than passed through, because these names end up in a shell loop in
+  // the workflow -- anything arbitrary reaching that would be a command
+  // injection. An absent header means "all", so uploads from a cached copy of
+  // the old page keep working exactly as before.
+  const requested = (request.headers.get("X-Dashboards") || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const unknown = requested.filter((d) => !KNOWN_DASHBOARDS.includes(d));
+  if (unknown.length) {
+    return json({ error: `Unknown dashboard(s): ${unknown.join(", ")}` }, 400);
+  }
+  const dashboards = requested.length ? requested : KNOWN_DASHBOARDS;
+
   const date = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
   const prefix = `raw:${date}`;
 
@@ -121,7 +150,7 @@ export async function onRequestPost({ request, env }) {
       // when the write came first.
       body: JSON.stringify({
         event_type: "raw-upload",
-        client_payload: { prefix, date, uploadId, chunks: total, format },
+        client_payload: { prefix, date, uploadId, chunks: total, format, dashboards },
       }),
     }
   );

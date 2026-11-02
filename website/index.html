@@ -7,13 +7,23 @@
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
-  <nav class="top-links">
-    <a href="/upload/">Upload export</a>
-  </nav>
   <header>
     <h1>Freshdesk <span class="accent-text">Analytics</span> Dashboards</h1>
     <p>Replacing a decade of manual Excel exports, one dashboard at a time.</p>
-    <div class="progress-pill" id="progress-pill"></div>
+    <!-- The only route to /upload. It used to sit in the top nav of every page,
+         one slip away while reading a report -- and an upload REPLACES the whole
+         dataset, so it belongs somewhere you arrive at deliberately. -->
+    <div class="header-actions">
+      <a class="upload-cta" href="/upload/">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 16V4" />
+          <path d="m7 9 5-5 5 5" />
+          <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+        </svg>
+        Upload export
+      </a>
+    </div>
   </header>
   <main>
     <ul class="dashboard-list" id="dashboard-list"></ul>
@@ -45,10 +55,6 @@
       },
     ];
 
-    // Total planned per the project roadmap (see CLAUDE.md) — used only for
-    // the "X of 10 live" pill, purely informational.
-    const TOTAL_PLANNED = 10;
-
     const ACCENTS = [
       "var(--accent-blue)",
       "var(--accent-violet)",
@@ -59,9 +65,6 @@
 
     const list = document.getElementById("dashboard-list");
     const emptyState = document.getElementById("empty-state");
-    const progressPill = document.getElementById("progress-pill");
-
-    progressPill.textContent = `${dashboards.length} of ${TOTAL_PLANNED} dashboards live`;
 
     if (dashboards.length > 0) {
       emptyState.remove();

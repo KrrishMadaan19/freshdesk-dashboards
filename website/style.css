@@ -49,15 +49,89 @@ header p {
   color: var(--muted);
 }
 
-.progress-pill {
-  display: inline-block;
+.header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
   margin-top: 0.9rem;
-  padding: 0.3rem 0.75rem;
+}
+
+.upload-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.5rem 0.9rem;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: linear-gradient(90deg, var(--accent-blue), var(--accent-violet));
+  color: #fff;
+  font-size: 0.88rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
+}
+
+.upload-cta:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.07);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+}
+
+.upload-cta:active {
+  transform: translateY(0);
+}
+
+/* Visible focus ring: this is the one destructive action on the site, so it
+   should never be ambiguous which control is about to be activated. */
+.upload-cta:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+
+.build-picker {
+  margin: 1.5rem 0 0;
+  padding: 1rem 1.1rem;
   border: 1px solid var(--border);
-  border-radius: 999px;
-  font-size: 0.78rem;
-  color: var(--muted);
+  border-radius: 10px;
   background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.build-picker legend {
+  padding: 0 0.4rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.build-picker label {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 0.92rem;
+  cursor: pointer;
+}
+
+.build-picker input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--accent-blue);
+  cursor: pointer;
+}
+
+.build-note {
+  margin: 0.2rem 0 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--warn-text, #b4690e);
+}
+
+.build-note[hidden] {
+  display: none;
 }
 
 main {

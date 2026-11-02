@@ -38,6 +38,23 @@
       <span id="file-chip-size" class="file-chip-size"></span>
     </div>
 
+    <!-- Which dashboards to rebuild from this upload. All of them by default:
+         the upload REPLACES the dataset either way, so anything left unticked
+         keeps showing figures derived from the previous file. The warning below
+         appears as soon as that is the case, because a set of dashboards that
+         silently disagree with each other is the hardest kind of error to
+         notice. -->
+    <fieldset class="build-picker">
+      <legend>Rebuild which dashboards?</legend>
+      <label><input type="checkbox" name="dashboard" value="creation-to-assignment" checked />
+        Creation to Assignment</label>
+      <label><input type="checkbox" name="dashboard" value="daily-pending-closure" checked />
+        Daily Pending and Closure</label>
+      <label><input type="checkbox" name="dashboard" value="overall-cancelled" checked />
+        Overall Cancelled</label>
+      <p class="build-note" id="build-note" hidden></p>
+    </fieldset>
+
     <div id="progress-track" class="progress-track" hidden>
       <div id="progress-fill" class="progress-fill"></div>
     </div>
@@ -118,6 +135,34 @@
     // ~100MB body cap, so file size stops being a limit at all.
     const CHUNK_BYTES = 20 * 1024 * 1024;
 
+    const dashboardBoxes = Array.from(document.querySelectorAll('input[name="dashboard"]'));
+    const buildNote = document.getElementById("build-note");
+
+    function selectedDashboards() {
+      return dashboardBoxes.filter((b) => b.checked).map((b) => b.value);
+    }
+
+    function refreshBuildNote() {
+      const skipped = dashboardBoxes.filter((b) => !b.checked);
+      if (!skipped.length) {
+        buildNote.hidden = true;
+        return;
+      }
+      const names = skipped.map((b) => b.parentElement.textContent.trim());
+      // Said plainly, because this is the state that wastes an afternoon: the
+      // upload replaces the dataset whatever is ticked, so an unticked
+      // dashboard keeps numbers derived from the previous file and will
+      // disagree with the others until it is rebuilt.
+      buildNote.hidden = false;
+      buildNote.textContent =
+        `${names.join(" and ")} ${names.length === 1 ? "will" : "will"} not be rebuilt, ` +
+        `so ${names.length === 1 ? "it" : "they"} will keep showing figures from the ` +
+        `previous export and won't match the others until rebuilt.`;
+    }
+
+    for (const box of dashboardBoxes) box.addEventListener("change", refreshBuildNote);
+    refreshBuildNote();
+
     function postChunk(chunk, format, uploadId, index, total, onProgress) {
       return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
@@ -127,6 +172,9 @@
         xhr.setRequestHeader("X-Upload-Id", uploadId);
         xhr.setRequestHeader("X-Chunk-Index", String(index));
         xhr.setRequestHeader("X-Chunk-Total", String(total));
+        // Sent on every chunk so the Function has it when the final chunk
+        // triggers processing, without needing to stash it between requests.
+        xhr.setRequestHeader("X-Dashboards", selectedDashboards().join(","));
 
         xhr.upload.addEventListener("progress", (e) => {
           if (e.lengthComputable) onProgress(e.loaded);
@@ -179,6 +227,12 @@
         setStatus("Please choose a .csv, .xlsx, .xls or .xlsb file.", "error");
         return;
       }
+      // Refuse rather than silently replace the dataset and rebuild nothing,
+      // which would leave every dashboard stale with no indication why.
+      if (selectedDashboards().length === 0) {
+        setStatus("Pick at least one dashboard to rebuild.", "error");
+        return;
+      }
 
       fileChip.hidden = false;
       fileChipName.textContent = file.name;
@@ -193,8 +247,15 @@
         progressFill.style.width = "0%";
 
         const payload = await maybeGzip(file, format);
+        const chosen = selectedDashboards();
         const result = await uploadWithProgress(payload, format);
-        setStatus(`Uploaded as ${result.key}. Processing has been triggered.`, "ok");
+        const which = chosen.length === dashboardBoxes.length
+          ? "all dashboards"
+          : `${chosen.length} of ${dashboardBoxes.length} dashboards`;
+        setStatus(
+          `Uploaded as ${result.key}. Rebuilding ${which} — this takes a few minutes.`,
+          "ok"
+        );
         dropzone.classList.add("success-pulse");
         setTimeout(() => dropzone.classList.remove("success-pulse"), 600);
       } catch (err) {
