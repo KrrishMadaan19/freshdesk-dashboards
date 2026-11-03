@@ -25,6 +25,12 @@ window.DASHBOARDS = [
     href: "/dashboards/overall-cancelled/",
     description: "Cancelled, spam, auto-closed and forwarded tickets by reason, over time.",
   },
+  {
+    id: "csat-tracker",
+    name: "C-SAT Tracker",
+    href: "/dashboards/csat-tracker/",
+    description: "WhatsApp survey ratings by month, city tier, week, day and resolution type.",
+  },
 ];
 
 // Cycled per dashboard so the cards on the homepage and the dots in the nav

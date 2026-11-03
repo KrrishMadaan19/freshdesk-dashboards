@@ -28,6 +28,7 @@ const KNOWN_DASHBOARDS = [
   "creation-to-assignment",
   "daily-pending-closure",
   "overall-cancelled",
+  "csat-tracker",
 ];
 
 function json(body, status = 200) {

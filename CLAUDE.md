@@ -168,7 +168,19 @@ freshdesk-dashboards/
       earlier month is a frozen paste with a different row set, so row labels
       here are discovered from the data instead. See
       docs/excel_process_notes/03-daily-pending-closure.md.*
-- [ ] 4. C-SAT Tracker Report
+- [x] 4. C-SAT Tracker Report — *built and validated. Keys off `WhatsApp
+      Survey Received` (the day the rating came back). All seven of the
+      workbook's DATA helper columns reproduce row-for-row on its 18,887
+      rows, and the real transform reproduces 1,241 of 1,252 sheet cells
+      exactly; the other 11 are the workbook counting unrated surveys in one
+      block only. City tier needs a pincode lookup that isn't in the export:
+      scripts/reference/pincode_tiers.csv, extracted from the workbook with
+      VLOOKUP's first-match rule. Biggest finding: the workbook misses
+      ratings that arrive after a ticket's paste day, and they skew
+      negative, so it understates DSAT every month (Sep'26: 12.6% vs 15.8%
+      from the export). Response-rate % is not built -- its denominator is
+      typed into the workbook by hand and isn't in the export. See
+      docs/excel_process_notes/04-csat-tracker.md.*
 - [x] 5. Overall Cancelled Report — *built and validated. Logic proven
       against the source workbook's own 87,972 raw rows: all four derived
       helper values (month, day ordinal, week, category) match the

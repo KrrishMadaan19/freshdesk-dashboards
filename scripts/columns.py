@@ -13,6 +13,8 @@ UTR = "UTR"
 RESOLUTION_TYPE = "Resolution Type"
 SOURCE = "Source"
 PRODUCT_CLASSIFICATION = "Product Classification"
+CSAT_SURVEY = "CSAT Survey"
+PINCODE = "Pincode"
 
 CREATED_TIME = "Created time"
 RESOLVED_TIME = "Resolved time"
