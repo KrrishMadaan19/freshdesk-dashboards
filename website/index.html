@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Freshdesk Analytics Dashboards</title>
   <link rel="stylesheet" href="/style.css" />
+  <script src="/nav.js"></script>
 </head>
 <body>
   <header>
@@ -31,37 +32,13 @@
   </main>
 
   <script>
-    // Add an entry here each time a new dashboard section ships. `id` must
-    // match the transform script's PROCESSED_PREFIX suffix (the name used
-    // in /api/dashboards/<id>), so the "data through" badge can look it up.
-    const dashboards = [
-      {
-        id: "creation-to-assignment",
-        name: "Creation to Assignment",
-        href: "/dashboards/creation-to-assignment/",
-        description: "Ageing from ticket creation to inward, spare, refund, replacement and SP assignment.",
-      },
-      {
-        id: "daily-pending-closure",
-        name: "Daily Pending and Closure",
-        href: "/dashboards/daily-pending-closure/",
-        description: "Daily inflow and closure by group, channel, bucket movement and service partner.",
-      },
-      {
-        id: "overall-cancelled",
-        name: "Overall Cancelled",
-        href: "/dashboards/overall-cancelled/",
-        description: "Cancelled, spam, auto-closed and forwarded tickets by reason, over time.",
-      },
-    ];
-
-    const ACCENTS = [
-      "var(--accent-blue)",
-      "var(--accent-violet)",
-      "var(--accent-teal)",
-      "var(--accent-coral)",
-      "var(--accent-pink)",
-    ];
+    // Both lists live in /nav.js, which every page loads, so a new dashboard
+    // is one entry there rather than an edit here AND in four navs that then
+    // disagree about what exists.
+    // Defaulted, so a nav.js that fails to load leaves the empty state
+    // showing rather than throwing and leaving a blank page.
+    const dashboards = window.DASHBOARDS || [];
+    const ACCENTS = window.DASHBOARD_ACCENTS || ["var(--accent-blue)"];
 
     const list = document.getElementById("dashboard-list");
     const emptyState = document.getElementById("empty-state");

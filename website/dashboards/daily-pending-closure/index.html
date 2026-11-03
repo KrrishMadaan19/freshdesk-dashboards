@@ -68,10 +68,14 @@
       cursor: pointer;
     }
   </style>
+  <script src="/nav.js"></script>
 </head>
 <body class="viz-root">
-  <nav class="top-links">
-    <a href="/">Home</a>
+  <!-- Filled in by /nav.js from the one dashboard list; these two are the
+       fallback if it fails to load. -->
+  <nav class="top-links" data-nav>
+    <a class="nav-link" href="/">Home</a>
+    <a class="nav-link" href="/">Dashboards</a>
   </nav>
   <header>
     <h1>Daily Pending and Closure</h1>

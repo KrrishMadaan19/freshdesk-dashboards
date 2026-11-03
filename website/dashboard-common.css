@@ -67,9 +67,17 @@
   background: var(--surface-1);
   color: var(--text-secondary);
   border: none;
-  padding: 0.4rem 0.75rem;
+  padding: 0.45rem 0.85rem;
+  font-family: inherit;
   font-size: 0.85rem;
+  font-weight: 500;
   cursor: pointer;
+  transition: background 0.14s ease, color 0.14s ease;
+}
+
+.week-toggle button:hover:not(.active) {
+  background: rgba(var(--heat-rgb), 0.12);
+  color: var(--text-primary);
 }
 
 .week-toggle button.active {
@@ -92,9 +100,16 @@
   color: var(--text-secondary);
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 0.3rem 0.65rem;
+  padding: 0.35rem 0.7rem;
+  font-family: inherit;
   font-size: 0.82rem;
   cursor: pointer;
+  transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease;
+}
+
+.week-tabs button:hover:not(.active) {
+  background: rgba(var(--heat-rgb), 0.12);
+  color: var(--text-primary);
 }
 
 .week-tabs button.active {
