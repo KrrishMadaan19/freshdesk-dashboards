@@ -43,6 +43,12 @@ window.DASHBOARDS = [
     href: "/dashboards/sp-closure-bifurcation/",
     description: "Each service partner's closures by resolution type, TAT and CSAT, month by month.",
   },
+  {
+    id: "sp-tat",
+    name: "SP TAT Performance",
+    href: "/dashboards/sp-tat/",
+    description: "Step-by-step turnaround on service-partner jobs, with and without spares.",
+  },
 ];
 
 // Cycled per dashboard so the cards on the homepage and the dots in the nav

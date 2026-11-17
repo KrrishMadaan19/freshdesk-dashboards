@@ -230,6 +230,15 @@ def calendar_days(end, start):
     return (end.dt.normalize() - start.dt.normalize()).dt.days
 
 
+def elapsed_days(end, start):
+    """Whole days elapsed, INT(end - start), for pairs where BOTH sides are
+    real timestamps -- there's no truncation mismatch to correct, so the
+    workbook's own arithmetic is kept. (Use calendar_days whenever either
+    side is date-only.)"""
+    import numpy as np
+    return np.floor((end - start).dt.total_seconds() / 86400)
+
+
 def csat_dsat(rating):
     """The TAT workbooks' survey split:
       IF(BD="","",IF(BD="Satisfied","CSAT",IF(BD="Extremely Satisfied","CSAT","DSAT")))

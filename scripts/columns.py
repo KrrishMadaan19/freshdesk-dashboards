@@ -18,6 +18,7 @@ PINCODE = "Pincode"
 ERP_MODEL = "ERP Model"
 ERP_CATEGORY = "ERP Category"
 ERP_SUB_CATEGORY = "ERP Sub Category"
+SPARE_NAMES = ["Spare Name 1", "Spare Name 2", "Spare Name 3", "Spare Name_4", "Spare Name 5"]
 
 CREATED_TIME = "Created time"
 RESOLVED_TIME = "Resolved time"

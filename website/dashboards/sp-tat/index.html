@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SP TAT Performance — Freshdesk Analytics Dashboards</title>
+  <link rel="stylesheet" href="/style.css" />
+  <link rel="stylesheet" href="/dashboard-common.css" />
+  <script src="/nav.js"></script>
+  <script src="/heat-table.js"></script>
+  <style>
+    table.heatmap td.rate { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--text-primary); background: transparent !important; }
+    table.heatmap th.rate-head { color: var(--text-primary); }
+  </style>
+</head>
+<body class="viz-root">
+  <!-- Filled in by /nav.js from the one dashboard list; these two are the
+       fallback if it fails to load. -->
+  <nav class="top-links" data-nav>
+    <a class="nav-link" href="/">Home</a>
+    <a class="nav-link" href="/">Dashboards</a>
+  </nav>
+  <header>
+    <h1>SP TAT Performance</h1>
+    <p>Step-by-step turnaround on service-partner jobs — assignment, spare, visit and close looping — split by whether a spare part was needed, counted in the month resolved.</p>
+  </header>
+  <main>
+    <div id="status" class="status-message">Loading…</div>
+
+    <div id="dashboard" hidden>
+      <div class="controls-row">
+        <div class="week-toggle" id="view-toggle">
+          <button data-view="tat" class="active" type="button">TAT by step</button>
+          <button data-view="partners" type="button">Partner survey</button>
+          <button data-view="state" type="button">State</button>
+          <button data-view="city" type="button">City</button>
+        </div>
+      </div>
+      <div class="controls-row" style="margin-top:-0.5rem">
+        <div class="week-toggle" id="spare-picker"></div>
+        <div class="week-toggle" id="step-picker"></div>
+        <div id="month-picker" hidden>
+          <label for="month-select">Month</label>
+          <select id="month-select"></select>
+        </div>
+      </div>
+
+      <div class="table-scroll">
+        <table class="heatmap">
+          <thead><tr id="header-row"></tr></thead>
+          <tbody id="grid-body"></tbody>
+        </table>
+      </div>
+
+      <p class="footnote" id="footnote"></p>
+    </div>
+  </main>
+
+  <script>
+    const { render: drawTable, sum, pct, longDate } = window.HeatTable;
+    const statusEl = document.getElementById("status");
+    const dashboardEl = document.getElementById("dashboard");
+    const monthSelect = document.getElementById("month-select");
+    const monthPicker = document.getElementById("month-picker");
+    const sparePicker = document.getElementById("spare-picker");
+    const stepPicker = document.getElementById("step-picker");
+    const headerRowEl = document.getElementById("header-row");
+    const gridBodyEl = document.getElementById("grid-body");
+    const footnoteEl = document.getElementById("footnote");
+
+    let data = null;
+    const state = { view: "tat", spare: "SPARE-NO", step: "to_resolved", month: null };
+
+    function showEmptyState() {
+      statusEl.innerHTML = "";
+      const line = document.createElement("p");
+      line.style.margin = "0 0 0.75rem";
+      line.textContent = "No data yet.";
+      const hint = document.createElement("p");
+      hint.style.margin = "0";
+      hint.style.fontSize = "0.85rem";
+      const link = document.createElement("a");
+      link.href = "/upload/";
+      link.textContent = "Upload a Freshdesk export";
+      hint.appendChild(link);
+      hint.appendChild(document.createTextNode(" to populate this dashboard."));
+      statusEl.appendChild(line);
+      statusEl.appendChild(hint);
+      dashboardEl.hidden = true;
+    }
+
+    function buildToggle(container, items, key, onChange) {
+      container.innerHTML = "";
+      for (const [value, label] of items) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.textContent = label;
+        b.classList.toggle("active", state[key] === value);
+        b.addEventListener("click", () => {
+          state[key] = value;
+          for (const x of container.children) x.classList.toggle("active", x === b);
+          if (onChange) onChange();
+          render();
+        });
+        container.appendChild(b);
+      }
+    }
+
+    // The steps differ by block: only spare jobs have the spare steps.
+    function buildStepPicker() {
+      const steps = data.steps[state.spare];
+      if (!steps.includes(state.step)) state.step = "to_resolved";
+      buildToggle(stepPicker, steps.map((k) => [k, data.measures[k]]), "step");
+    }
+
+    function fillMonths(months) {
+      const keep = months.includes(state.month) ? state.month : months[months.length - 1];
+      state.month = keep;
+      monthSelect.innerHTML = "";
+      for (const m of months) {
+        const o = document.createElement("option");
+        o.value = m; o.textContent = m;
+        if (m === keep) o.selected = true;
+        monthSelect.appendChild(o);
+      }
+    }
+
+    async function load() {
+      try {
+        const response = await fetch("/api/dashboards/sp-tat");
+        if (response.status === 404) return showEmptyState();
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          throw new Error(body.error || `Request failed (${response.status})`);
+        }
+        data = await response.json();
+        if (!data.months || data.months.length === 0) return showEmptyState();
+        buildToggle(sparePicker, [["SPARE-NO", "No spare"], ["SPARE-YES", "With spare"]], "spare", buildStepPicker);
+        buildStepPicker();
+        statusEl.hidden = true;
+        dashboardEl.hidden = false;
+        render();
+      } catch (err) {
+        statusEl.textContent = err.message || "Failed to load dashboard data.";
+      }
+    }
+
+    const surveyExtras = [
+      { label: "Total", kind: "total", value: (r) => (r.CSAT ?? 0) + (r.DSAT ?? 0) },
+      { label: "CSAT %", kind: "rate", value: (r) => pct(r.CSAT ?? 0, (r.CSAT ?? 0) + (r.DSAT ?? 0)) },
+      { label: "DSAT %", kind: "rate", value: (r) => pct(r.DSAT ?? 0, (r.CSAT ?? 0) + (r.DSAT ?? 0)) },
+    ];
+
+    function placeSpec(kind) {
+      const m = state.month;
+      const tat = data[kind].tat[m] || {};
+      const survey = data[kind].survey[m] || {};
+      const names = new Set([...Object.keys(tat), ...Object.keys(survey)]);
+      const grid = {};
+      for (const n of names) grid[n] = { ...(tat[n] || {}), CSAT: survey[n]?.CSAT ?? 0, DSAT: survey[n]?.DSAT ?? 0 };
+      const rows = [...names].sort((a, b) =>
+        (a === data.unknown_place) - (b === data.unknown_place) || sum(grid[b], data.bands) - sum(grid[a], data.bands));
+      return {
+        corner: kind === "state" ? "State" : "City",
+        rows, columns: data.bands, grid, cellPct: true,
+        extras: [
+          { label: "Total", kind: "total", value: (r) => sum(r, data.bands) },
+          { label: "CSAT", kind: "total", value: (r) => r.CSAT ?? 0 },
+          { label: "DSAT", kind: "total", value: (r) => r.DSAT ?? 0 },
+          ...surveyExtras.slice(1),
+        ],
+        totalRow: true, totalKeys: ["CSAT", "DSAT"],
+        notes: [`Bands are case creation → resolved for jobs resolved in ${m}; CSAT and DSAT are surveys that came back in ${m}.`],
+      };
+    }
+
+    function currentSpec() {
+      if (state.view === "tat") {
+        const grid = {};
+        for (const m of data.months) grid[m] = data.tat[state.spare][m]?.[state.step] || {};
+        const notes = [`${data.measures[state.step]}, in whole calendar days.`];
+        if (state.step === "spare_to_visit") {
+          notes.push("Measured from the Inward Payment Group Assignment, as the source workbook does.");
+        }
+        return {
+          corner: "Resolved month", rows: data.months, columns: data.bands, grid, cellPct: true,
+          extras: [{ label: "Total", kind: "total", value: (r) => sum(r, data.bands) }],
+          totalRow: true, notes,
+        };
+      }
+      if (state.view === "partners") {
+        const src = data.partner_survey[state.month] || {};
+        const rows = Object.keys(src).sort((a, b) =>
+          ((src[b].CSAT ?? 0) + (src[b].DSAT ?? 0)) - ((src[a].CSAT ?? 0) + (src[a].DSAT ?? 0)) || a.localeCompare(b));
+        return {
+          corner: "Service partner", rows, columns: ["CSAT", "DSAT"], grid: src,
+          extras: surveyExtras, totalRow: true,
+          notes: [`Surveys that came back in ${state.month} on service-partner jobs. Every partner is listed — the workbook's typed list leaves out newer ones.`],
+        };
+      }
+      return placeSpec(state.view);
+    }
+
+    function render() {
+      const v = state.view;
+      sparePicker.hidden = v !== "tat";
+      stepPicker.hidden = v !== "tat";
+      monthPicker.hidden = v === "tat";
+      if (v === "partners") fillMonths(data.survey_months);
+      else if (v === "state" || v === "city") fillMonths(data.months);
+      const spec = currentSpec();
+      drawTable(headerRowEl, gridBodyEl, spec);
+      const notes = [...spec.notes, "The neutral survey rating counts as DSAT, as in the source workbook."];
+      if (data.latest) notes.push(`Data through ${longDate(data.latest)}.`);
+      footnoteEl.textContent = notes.join(" ");
+    }
+
+    monthSelect.addEventListener("change", () => { state.month = monthSelect.value; render(); });
+    for (const b of document.querySelectorAll("#view-toggle button")) {
+      b.addEventListener("click", () => {
+        state.view = b.dataset.view;
+        for (const x of document.querySelectorAll("#view-toggle button")) x.classList.toggle("active", x === b);
+        render();
+      });
+    }
+    load();
+  </script>
+</body>
+</html>

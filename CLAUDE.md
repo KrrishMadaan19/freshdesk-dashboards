@@ -204,5 +204,10 @@ freshdesk-dashboards/
       workbook's RAW exactly. Its GRAND TOTAL sums only the first 35 of 138
       partners (Sep: 561 shown vs 1,615 real) and its fixed partner list
       misses 17 partners. See docs/excel_process_notes/08-sp-closure-bifurcation.md.*
-- [ ] 9. SP TAT Performance
+- [x] 9. SP TAT Performance — *built and validated: AUTO-DASHBOARD 360 cells
+      (278 exact, 78 truncation fix, 4 June-copied-from-May, 0 unexplained);
+      survey block 738/738 exact. Its count block is typed, not formulas.
+      "SP Assigned to close looping" drops 203 same-day closures (one-sided
+      truncation + negative guard); fixed with calendar days. Typed partner
+      list shows 15% of Sep'26 partner DSATs. See docs/excel_process_notes/09-sp-tat.md.*
 - [ ] 10. No Service Partner Assigned Report
