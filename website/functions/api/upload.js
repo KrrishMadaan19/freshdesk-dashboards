@@ -29,6 +29,7 @@ const KNOWN_DASHBOARDS = [
   "daily-pending-closure",
   "overall-cancelled",
   "csat-tracker",
+  "refund-tat",
 ];
 
 function json(body, status = 200) {

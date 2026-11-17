@@ -31,6 +31,12 @@ window.DASHBOARDS = [
     href: "/dashboards/csat-tracker/",
     description: "WhatsApp survey ratings by month, city tier, week, day and resolution type.",
   },
+  {
+    id: "refund-tat",
+    name: "Refund TAT Performance",
+    href: "/dashboards/refund-tat/",
+    description: "How long refunds take, by serviceability, state, city and product category.",
+  },
 ];
 
 // Cycled per dashboard so the cards on the homepage and the dots in the nav

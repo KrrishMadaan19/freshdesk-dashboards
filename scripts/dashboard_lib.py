@@ -187,3 +187,101 @@ def load_master():
 def write_processed(prefix, output):
     kv_store.write_chunked(prefix, json.dumps(output))
     print(f"Wrote dashboard data to KV under '{prefix}'")
+
+
+# --- TAT Performance workbooks (Refund, Replacement, SP TAT) ----------------
+#
+# All three bucket ageing with the same nested IF:
+#   IF(x<=1,"0-1",IF(x<=3,"2-3",IF(x<=5,"4-5",IF(x<=7,"6-7","7+"))))
+# which is a different banding from TAT_BUCKETS above (Dashboard 1's).
+TAT_BANDS = ["0-1", "2-3", "4-5", "6-7", "7+"]
+
+
+def tat_band(days, drop_negative=False):
+    """Ageing in whole days -> band. Most of the workbook formulas have no
+    negative guard, so a negative ageing lands in "0-1"; the few that do
+    (IF(x<0,"",...)) pass drop_negative=True."""
+    if pd.isna(days):
+        return None
+    if days < 0 and drop_negative:
+        return None
+    if days <= 1:
+        return "0-1"
+    if days <= 3:
+        return "2-3"
+    if days <= 5:
+        return "4-5"
+    if days <= 7:
+        return "6-7"
+    return "7+"
+
+
+def calendar_days(end, start):
+    """Whole calendar days from start to end, both truncated to midnight.
+
+    The workbooks compute INT(end - start) on whatever the two cells hold,
+    and in several places only ONE side is date-only (Resolved time is
+    stripped of its time-of-day, an assignment timestamp isn't). That makes
+    the ageing a day short whenever the timestamp is after midnight -- for
+    Refund's "refund bucket -> resolved" it put 25% of tickets in the wrong
+    band, and the workbook's three ageings stopped adding up on 76% of rows.
+    Truncating both sides makes every pair of measures sum exactly.
+    """
+    return (end.dt.normalize() - start.dt.normalize()).dt.days
+
+
+def csat_dsat(rating):
+    """The TAT workbooks' survey split:
+      IF(BD="","",IF(BD="Satisfied","CSAT",IF(BD="Extremely Satisfied","CSAT","DSAT")))
+    so the neutral rating counts as DSAT. Case-insensitive, like Excel's =."""
+    text = "" if pd.isna(rating) else str(rating).strip()
+    if text == "":
+        return None
+    return "CSAT" if text.casefold() in ("satisfied", "extremely satisfied") else "DSAT"
+
+
+def normalise_key(value):
+    """Lookup keys (pincodes, model codes) as text: trimmed, and with the
+    "400104.0" a numeric round-trip leaves behind removed. Nothing more, so a
+    malformed key stays unmatched rather than being guessed at."""
+    text = "" if pd.isna(value) else str(value).strip()
+    return text[:-2] if text.endswith(".0") else text
+
+
+def load_reference(filename, key, *values):
+    """A lookup table from scripts/reference/, as {key: value} (or
+    {key: (v1, v2, ...)} for several value columns).
+
+    These are VLOOKUP tables copied out of the source workbooks. VLOOKUP
+    returns the FIRST matching row, and several of the tables repeat keys
+    with different values, so the reference files were written keeping the
+    first row per key -- and this keeps the first again, in case a file is
+    ever regenerated without deduplicating.
+    """
+    import csv
+    import os
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reference", filename)
+    table = {}
+    with open(path, newline="", encoding="utf-8") as fh:
+        for row in csv.DictReader(fh):
+            k = normalise_key(row[key])
+            if k and k not in table:
+                picked = tuple(row[v].strip() for v in values)
+                table[k] = picked[0] if len(picked) == 1 else picked
+    return table
+
+
+def lookup(series, table, default=None):
+    """Map a column through a reference table on normalised keys."""
+    return series.map(lambda v: table.get(normalise_key(v), default))
+
+
+def nested_counts(df, keys, column, labels):
+    """{k1: {k2: ... {label: count}}} for every combination present in df,
+    always carrying every label at the leaves."""
+    if not keys:
+        return count_by(df, column, labels)
+    out = {}
+    for value, part in df.groupby(keys[0], sort=False):
+        out[value] = nested_counts(part, keys[1:], column, labels)
+    return out

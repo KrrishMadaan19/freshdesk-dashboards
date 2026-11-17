@@ -189,7 +189,14 @@ freshdesk-dashboards/
       docs/excel_process_notes/05-overall-cancelled.md — note it reproduces
       one of the workbook's total bugs deliberately, and that the workbook
       double-counts reopened tickets in the month it's actively appended to.*
-- [ ] 6. Refund TAT Performance
+- [x] 6. Refund TAT Performance — *built and validated: 4,680 sheet cells,
+      3,587 exact, 1,093 each traced to a workbook defect, 0 unexplained.
+      Its refund-to-resolved ageing truncates only one side to midnight and
+      puts 25% of tickets a band too fast; the site uses calendar days.
+      City/state stop being filled in mid-August (41% of the month); the
+      category sheet reads the wrong columns. Shared TAT helpers (tat_band,
+      calendar_days, csat_dsat, load_reference) live in dashboard_lib.
+      See docs/excel_process_notes/06-refund-tat.md.*
 - [ ] 7. Replacement TAT Performance
 - [ ] 8. Service Partner Closure Bifurcation Report
 - [ ] 9. SP TAT Performance
