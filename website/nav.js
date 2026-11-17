@@ -37,6 +37,12 @@ window.DASHBOARDS = [
     href: "/dashboards/refund-tat/",
     description: "How long refunds take, by serviceability, state, city and product category.",
   },
+  {
+    id: "sp-closure-bifurcation",
+    name: "SP Closure Bifurcation",
+    href: "/dashboards/sp-closure-bifurcation/",
+    description: "Each service partner's closures by resolution type, TAT and CSAT, month by month.",
+  },
 ];
 
 // Cycled per dashboard so the cards on the homepage and the dots in the nav

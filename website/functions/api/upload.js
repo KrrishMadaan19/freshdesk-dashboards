@@ -30,6 +30,7 @@ const KNOWN_DASHBOARDS = [
   "overall-cancelled",
   "csat-tracker",
   "refund-tat",
+  "sp-closure-bifurcation",
 ];
 
 function json(body, status = 200) {

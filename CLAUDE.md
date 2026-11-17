@@ -198,6 +198,11 @@ freshdesk-dashboards/
       calendar_days, csat_dsat, load_reference) live in dashboard_lib.
       See docs/excel_process_notes/06-refund-tat.md.*
 - [ ] 7. Replacement TAT Performance
-- [ ] 8. Service Partner Closure Bifurcation Report
+- [x] 8. Service Partner Closure Bifurcation Report — *built and validated:
+      1,507 sheet cells, 1,494 exact, 13 traced to stale 7-day TAT values, 0
+      unexplained. Scope (Partner Name minus pseudo-partners) matches the
+      workbook's RAW exactly. Its GRAND TOTAL sums only the first 35 of 138
+      partners (Sep: 561 shown vs 1,615 real) and its fixed partner list
+      misses 17 partners. See docs/excel_process_notes/08-sp-closure-bifurcation.md.*
 - [ ] 9. SP TAT Performance
 - [ ] 10. No Service Partner Assigned Report
